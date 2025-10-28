@@ -21,26 +21,35 @@ pub struct XssScanner {
     payloads: Vec<String>,
 }
 
+use std::fs;
+use std::io::{self, BufRead};
+
 impl XssScanner {
     pub fn new(target_urls: Vec<Url>, forms: Vec<Form>) -> Self {
+        let mut payloads = Vec::new();
+        if let Ok(paths) = fs::read_dir("wordlists/xss") {
+            for path in paths {
+                if let Ok(path) = path {
+                    if let Some(extension) = path.path().extension() {
+                        if extension == "txt" {
+                            if let Ok(file) = fs::File::open(path.path()) {
+                                let reader = io::BufReader::new(file);
+                                for line in reader.lines() {
+                                    if let Ok(line) = line {
+                                        payloads.push(line);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Self {
             target_urls,
             forms,
-            payloads: vec![
-                "<script>alert('XSS')</script>".to_string(),
-                "<img src=x onerror=alert('XSS')>".to_string(),
-                "'\"><script>alert('XSS')</script>".to_string(),
-                "<svg/onload=alert('XSS')>".to_string(),
-                "javascript:alert('XSS')".to_string(),
-                "<a href=\"javascript:alert('XSS')\">Click me</a>".to_string(),
-                "\" autofocus onfocus=alert('XSS')>".to_string(),
-                "<body onload=alert('XSS')>".to_string(),
-                "<iframe src=\"javascript:alert('XSS')\"></iframe>".to_string(),
-                "<details ontoggle=alert('XSS')>".to_string(),
-                "<scRipt>netsparker(0x017899)</scRipt>".to_string(),
-                "x\" onmouseover=netsparker(0x019E8E) x=\"".to_string(),
-                "<scRipt>alert(0x01A5D7)</scRipt>".to_string(),
-            ],
+            payloads,
         }
     }
 

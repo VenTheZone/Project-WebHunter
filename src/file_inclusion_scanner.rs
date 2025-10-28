@@ -15,28 +15,47 @@ pub struct FileInclusionVulnerability {
     pub vuln_type: String,
 }
 
+use std::fs;
+use std::io::{self, BufRead};
+
 pub struct FileInclusionScanner {
     target_urls: Vec<Url>,
     forms: Vec<Form>,
-    lfi_payloads: Vec<&'static str>,
-    rfi_payloads: Vec<&'static str>,
+    payloads: Vec<String>,
 }
 
 impl FileInclusionScanner {
     pub fn new(target_urls: Vec<Url>, forms: Vec<Form>) -> Self {
+        let mut payloads = Vec::new();
+        if let Ok(paths) = fs::read_dir("wordlists/file_inclusion") {
+            println!("Reading payloads from wordlists/file_inclusion...");
+            for path in paths {
+                if let Ok(path) = path {
+                    if let Some(extension) = path.path().extension() {
+                        if extension == "txt" {
+                            if let Ok(file) = fs::File::open(path.path()) {
+                                let reader = io::BufReader::new(file);
+                                for line in reader.lines() {
+                                    if let Ok(line) = line {
+                                        payloads.push(line);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Self {
             target_urls,
             forms,
-            lfi_payloads: vec![
-                "../../../../../../../../etc/passwd",
-                "../../../../../../../../windows/win.ini",
-            ],
-            rfi_payloads: vec!["http://google.com/robots.txt"],
+            payloads,
         }
     }
 
     pub fn payloads_count(&self) -> usize {
-        self.lfi_payloads.len() + self.rfi_payloads.len()
+        self.payloads.len()
     }
 
     pub async fn scan(
@@ -60,7 +79,7 @@ impl FileInclusionScanner {
                 continue;
             }
 
-            for payload in self.lfi_payloads.iter().chain(self.rfi_payloads.iter()) {
+            for payload in &self.payloads {
                 let query_pairs: Vec<(String, String)> = url.query_pairs().into_owned().collect();
                 for i in 0..query_pairs.len() {
                     let mut new_query_parts = Vec::new();
@@ -104,7 +123,7 @@ impl FileInclusionScanner {
         let client = reqwest::Client::new();
 
         for form in &self.forms {
-            for payload in self.lfi_payloads.iter().chain(self.rfi_payloads.iter()) {
+            for payload in &self.payloads {
                 for i in 0..form.inputs.len() {
                     let mut form_data = HashMap::new();
                     let mut tested_param = String::new();
@@ -144,15 +163,23 @@ impl FileInclusionScanner {
     }
 
     fn is_vulnerable(&self, body: &str, payload: &str) -> Option<String> {
-        if self.lfi_payloads.contains(&payload) {
-            if body.contains("root:x:0:0") || body.contains("[fonts]") {
-                return Some("LFI".to_string());
+        let lfi_evidence = ["root:x:0:0", "[fonts]", "boot.ini"];
+        let rfi_evidence = ["<title>Google</title>", "User-agent: *"];
+
+        if payload.starts_with("http://") || payload.starts_with("https://") {
+            for evidence in &rfi_evidence {
+                if body.contains(evidence) {
+                    return Some("RFI".to_string());
+                }
             }
-        } else if self.rfi_payloads.contains(&payload) {
-            if body.contains("User-agent: *") {
-                return Some("RFI".to_string());
+        } else {
+            for evidence in &lfi_evidence {
+                if body.contains(evidence) {
+                    return Some("LFI".to_string());
+                }
             }
         }
+
         None
     }
 }

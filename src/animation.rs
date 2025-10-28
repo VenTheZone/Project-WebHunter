@@ -6,7 +6,7 @@ use crossterm::{cursor, terminal, ExecutableCommand, style::{Stylize, Color}};
 use rand::Rng;
 
 fn glitch_effect(stdout: &mut std::io::Stdout, text: &str, font: &FIGfont) {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rngs::ThreadRng::default();
     let figure = font.convert(text).unwrap().to_string();
     let lines: Vec<&str> = figure.lines().collect();
     let height = lines.len() as u16;

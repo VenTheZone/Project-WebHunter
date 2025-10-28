@@ -1,0 +1,3 @@
+../../../../../../../../etc/passwd
+../../../../../../../../windows/win.ini
+http://google.com/robots.txt
