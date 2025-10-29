@@ -17,7 +17,7 @@ WebHunter is a command-line tool for ethical hacking, designed to find common vu
     ```
 2.  **Build WebHunter:**
     ```
-    git clone <repository-url>
+    git clone https://github.com/VenTheZone/Project-WebHunter.git
     cd webhunter
     cargo build --release
     ```

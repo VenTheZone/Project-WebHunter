@@ -6,7 +6,7 @@ use crossterm::{cursor, terminal, ExecutableCommand, style::{Stylize, Color}};
 use rand::Rng;
 
 fn glitch_effect(stdout: &mut std::io::Stdout, text: &str, font: &FIGfont) {
-    let mut rng = rand::rngs::ThreadRng::default();
+    let mut rng = rand::thread_rng();
     let figure = font.convert(text).unwrap().to_string();
     let lines: Vec<&str> = figure.lines().collect();
     let height = lines.len() as u16;
@@ -104,11 +104,12 @@ pub fn run_animation() {
         }
 
         // Move cursor to next line for clean prompt
-        stdout.execute(cursor::MoveTo(0, author_row + 1)).ok();
+        stdout.execute(cursor::MoveTo(0, author_row + 2)).ok();
     } else {
         println!("{}", webhunter_text);
         println!("{}", author_text);
     }
 
+    println!("\nUse the arrow keys to navigate ↑ ↓");
     sleep(Duration::from_millis(200)); // barely pause
 }
