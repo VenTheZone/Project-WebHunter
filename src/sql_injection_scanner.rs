@@ -15,35 +15,60 @@ pub struct SqlInjectionVulnerability {
     pub vuln_type: String,
 }
 
+use std::fs;
+use std::io::{self, BufRead};
+
 pub struct SqlInjectionScanner {
     target_urls: Vec<Url>,
     forms: Vec<Form>,
-    error_based_payloads: Vec<&'static str>,
-    boolean_based_payloads: Vec<(&'static str, &'static str)>,
-    time_based_payloads: Vec<&'static str>,
+    error_based_payloads: Vec<String>,
+    boolean_based_payloads: Vec<(String, String)>,
+    time_based_payloads: Vec<String>,
 }
 
 impl SqlInjectionScanner {
     pub fn new(target_urls: Vec<Url>, forms: Vec<Form>) -> Self {
+        let mut error_based_payloads = Self::load_payloads("wordlists/sql_injection/error_based.txt");
+        error_based_payloads.extend(Self::load_payloads("wordlists/sql_injection/original_payloads.txt"));
+        let boolean_based_payloads = Self::load_boolean_payloads("wordlists/sql_injection/boolean_based.txt");
+        let time_based_payloads = Self::load_payloads("wordlists/sql_injection/time_based.txt");
+
         Self {
             target_urls,
             forms,
-            error_based_payloads: vec![
-                "'", "\"", "`", "')", "\")", "`)", "'))", "\"))", "`))",
-                "OR 1=1", "OR 1=0", "AND 1=1", "AND 1=0",
-            ],
-            boolean_based_payloads: vec![
-                (" AND 1=1", " AND 1=2"),
-                (" OR 1=1", " OR 1=2"),
-                (" and 1 in (1)", " and 1 in (2)"),
-            ],
-            time_based_payloads: vec![
-                "AND (SELECT * FROM (SELECT(SLEEP(5)))b)", // MySQL
-                "OR pg_sleep(5)",                          // PostgreSQL
-                "AND [RANDNUM]=DBMS_PIPE.RECEIVE_MESSAGE('[RANDSTR]',5)", // Oracle
-                "WAITFOR DELAY '0:0:5'",                   // MSSQL
-            ],
+            error_based_payloads,
+            boolean_based_payloads,
+            time_based_payloads,
         }
+    }
+
+    fn load_payloads(path: &str) -> Vec<String> {
+        let mut payloads = Vec::new();
+        if let Ok(file) = fs::File::open(path) {
+            let reader = io::BufReader::new(file);
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    payloads.push(line);
+                }
+            }
+        }
+        payloads
+    }
+
+    fn load_boolean_payloads(path: &str) -> Vec<(String, String)> {
+        let mut payloads = Vec::new();
+        if let Ok(file) = fs::File::open(path) {
+            let reader = io::BufReader::new(file);
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    let parts: Vec<&str> = line.split("/").collect();
+                    if parts.len() == 2 {
+                        payloads.push((parts[0].to_string(), parts[1].to_string()));
+                    }
+                }
+            }
+        }
+        payloads
     }
 
     pub fn payloads_count(&self) -> usize {
@@ -133,17 +158,21 @@ impl SqlInjectionScanner {
             let mut false_url = url.clone();
             false_url.set_query(Some(&false_query));
 
-            let true_response = client.get(true_url).send().await?;
-            let false_response = client.get(false_url).send().await?;
-
-            if let (Ok(true_body), Ok(false_body)) = (true_response.text().await, false_response.text().await) {
-                if true_body != false_body {
-                    vulnerabilities.push(SqlInjectionVulnerability {
-                        url: url.clone(),
-                        parameter: tested_param,
-                        payload: format!("{} / {}", true_payload, false_payload),
-                        vuln_type: "Boolean-Based".to_string(),
-                    });
+            if let (Some(true_response), Some(false_response)) = (
+                self.send_get_request(client, &true_url).await,
+                self.send_get_request(client, &false_url).await,
+            ) {
+                if let (Ok(true_body), Ok(false_body)) =
+                    (true_response.text().await, false_response.text().await)
+                {
+                    if true_body != false_body {
+                        vulnerabilities.push(SqlInjectionVulnerability {
+                            url: url.clone(),
+                            parameter: tested_param,
+                            payload: format!("{} / {}", true_payload, false_payload),
+                            vuln_type: "Boolean-Based".to_string(),
+                        });
+                    }
                 }
             }
             pb.inc(2);
@@ -180,16 +209,16 @@ impl SqlInjectionScanner {
             new_url.set_query(Some(&new_query));
 
             let start = Instant::now();
-            let _ = client.get(new_url.clone()).send().await?;
-            let duration = start.elapsed();
-
-            if duration > Duration::from_secs(5) {
-                vulnerabilities.push(SqlInjectionVulnerability {
-                    url: url.clone(),
-                    parameter: tested_param,
-                    payload: payload.to_string(),
-                    vuln_type: "Time-Based".to_string(),
-                });
+            if self.send_get_request(client, &new_url).await.is_some() {
+                let duration = start.elapsed();
+                if duration > Duration::from_secs(2) {
+                    vulnerabilities.push(SqlInjectionVulnerability {
+                        url: url.clone(),
+                        parameter: tested_param,
+                        payload: payload.to_string(),
+                        vuln_type: "Time-Based".to_string(),
+                    });
+                }
             }
             pb.inc(1);
             sleep(Duration::from_millis(50)).await;
@@ -418,15 +447,16 @@ impl SqlInjectionScanner {
             let mut new_url = url.clone();
             new_url.set_query(Some(&new_query));
 
-            let response = client.get(new_url.clone()).send().await?;
-            if let Ok(body) = response.text().await {
-                if self.is_error_based_vulnerable(&body) {
-                    vulnerabilities.push(SqlInjectionVulnerability {
-                        url: url.clone(),
-                        parameter: tested_param,
-                        payload: payload.to_string(),
-                        vuln_type: "Error-Based".to_string(),
-                    });
+            if let Some(response) = self.send_get_request(client, &new_url).await {
+                if let Ok(body) = response.text().await {
+                    if self.is_error_based_vulnerable(&body) {
+                        vulnerabilities.push(SqlInjectionVulnerability {
+                            url: url.clone(),
+                            parameter: tested_param.clone(),
+                            payload: payload.to_string(),
+                            vuln_type: "Error-Based".to_string(),
+                        });
+                    }
                 }
             }
             pb.inc(1);
@@ -435,11 +465,35 @@ impl SqlInjectionScanner {
         Ok(vulnerabilities)
     }
 
+    async fn send_get_request(&self, client: &reqwest::Client, url: &Url) -> Option<reqwest::Response> {
+        match client.get(url.clone()).send().await {
+            Ok(response) => Some(response),
+            Err(e) => {
+                eprintln!("[!] Error sending GET request to {}: {}", url, e);
+                None
+            }
+        }
+    }
+
     fn is_error_based_vulnerable(&self, body: &str) -> bool {
         let error_patterns = [
+            // MySQL
             "You have an error in your SQL syntax",
-            "Unclosed quotation mark",
             "Warning: mysql_fetch_array()",
+            // MSSQL
+            "Unclosed quotation mark after the character string",
+            "Incorrect syntax near",
+            "Microsoft OLE DB Provider for SQL Server",
+            "ODBC SQL Server Driver",
+            // Oracle
+            "ORA-00933: SQL command not properly ended",
+            "ORA-01756: quoted string not properly terminated",
+            // PostgreSQL
+            "ERROR: unterminated quoted string at or near",
+            "ERROR: syntax error at or near",
+            // SQLite
+            "SQLite/JDBCDriver",
+            "SQLITE_ERROR",
         ];
         error_patterns.iter().any(|&p| body.contains(p))
     }

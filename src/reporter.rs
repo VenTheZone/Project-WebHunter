@@ -48,23 +48,37 @@ impl Reporter {
         let domain = target_url.domain().unwrap_or("unknown_domain").replace(".", "_");
         fs::create_dir_all(&domain)?;
 
-        let file_path = format!("{}/Sql-Injection-output.txt", domain);
+        let file_path = format!("{}/Sql-Injection-output.md", domain);
         let mut file = fs::File::create(file_path)?;
 
-        writeln!(file, "WebHunter SQL Injection Scan Report for {}", target_url)?;
-        writeln!(file, "Scan completed on: {}", Local::now())?;
-        writeln!(file, "--------------------------------------------------")?;
+        writeln!(file, "# WebHunter SQL Injection Scan Report for {}", target_url)?;
+        writeln!(file, "**Scan completed on:** {}", Local::now())?;
+        writeln!(file, "---")?;
 
         if vulnerabilities.is_empty() {
-            writeln!(file, "No SQL injection vulnerabilities found.")?;
+            writeln!(file, "## No SQL injection vulnerabilities found.")?;
         } else {
+            writeln!(file, "## Summary")?;
+            writeln!(file, "WebHunter discovered one or more SQL injection vulnerabilities. This could allow an attacker to execute arbitrary SQL queries, bypass authentication, or exfiltrate sensitive data from the database.")?;
+            writeln!(file, "")?;
+            writeln!(file, "## Description")?;
+            writeln!(file, "SQL Injection is a web security vulnerability that allows an attacker to interfere with the queries that an application makes to its database. It generally allows an attacker to view data that they are not normally able to retrieve.")?;
+            writeln!(file, "")?;
+            writeln!(file, "## Impact")?;
+            writeln!(file, "Successful exploitation of an SQL Injection vulnerability can result in unauthorized access to sensitive data, such as passwords, credit card details, or personal user information. It can also be used to modify or delete this data, causing persistent changes to the application's content or behavior.")?;
+            writeln!(file, "")?;
+            writeln!(file, "## Remediation")?;
+            writeln!(file, "The most effective way to prevent SQL injection is to use parameterized queries (also known as prepared statements). This practice ensures that user-supplied input is treated as data and not as part of the SQL command.")?;
+            writeln!(file, "---")?;
+            writeln!(file, "## Findings")?;
+            writeln!(file, "| URL | Parameter | Type | Payload | Severity |")?;
+            writeln!(file, "|---|---|---|---|---|")?;
             for vuln in vulnerabilities {
-                writeln!(file, "Vulnerability Found:")?;
-                writeln!(file, "  URL: {}", vuln.url)?;
-                writeln!(file, "  Type: {}", vuln.vuln_type)?;
-                writeln!(file, "  Parameter: {}", vuln.parameter)?;
-                writeln!(file, "  Payload: {}", vuln.payload)?;
-                writeln!(file, "--------------------------------------------------")?;
+                writeln!(
+                    file,
+                    "| [{}]({}) | {} | {} | `{}` | High |",
+                    vuln.url, vuln.url, vuln.parameter, vuln.vuln_type, vuln.payload
+                )?;
             }
         }
         Ok(())
