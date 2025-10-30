@@ -45,12 +45,20 @@ impl<'a> DirScanner<'a> {
         ];
 
         self.pb.set_message("Running feroxbuster...");
-        let output = Command::new("feroxbuster")
+        let output = match Command::new("feroxbuster")
             .args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .spawn()?
-            .wait_with_output()?;
+            .spawn()
+        {
+            Ok(child) => child.wait_with_output()?,
+            Err(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "feroxbuster not found. Please install it and try again.",
+                ));
+            }
+        };
 
         self.pb.finish_with_message("Feroxbuster scan complete");
 
@@ -59,8 +67,10 @@ impl<'a> DirScanner<'a> {
 
         for line in json_output.lines() {
             if let Ok(response) = serde_json::from_str::<FeroxResponse>(line) {
-                if let Ok(url) = Url::parse(&response.url) {
-                    results.push((url, response.status, response.content_length));
+                if response.status != 404 {
+                    if let Ok(url) = Url::parse(&response.url) {
+                        results.push((url, response.status, response.content_length));
+                    }
                 }
             }
         }

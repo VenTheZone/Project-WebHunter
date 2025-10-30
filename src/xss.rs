@@ -89,6 +89,9 @@ impl XssScanner {
                     new_url.set_query(Some(&new_query));
 
                     let response = client.get(new_url.clone()).send().await?;
+                    if response.status() == reqwest::StatusCode::NOT_FOUND {
+                        continue;
+                    }
                     if let Ok(body) = response.text().await {
                         if self.is_vulnerable(&body, payload) {
                             vulnerabilities.push(Vulnerability {
@@ -146,6 +149,9 @@ impl XssScanner {
                     };
 
                     if let Ok(response) = response_res {
+                        if response.status() == reqwest::StatusCode::NOT_FOUND {
+                            continue;
+                        }
                         if let Ok(body) = response.text().await {
                             if self.is_vulnerable(&body, payload) {
                                 vulnerabilities.push(Vulnerability {
@@ -162,6 +168,9 @@ impl XssScanner {
                     // Check for stored XSS by visiting the action URL after submission
                     let response_res = client.get(action_url.clone()).send().await;
                     if let Ok(response) = response_res {
+                        if response.status() == reqwest::StatusCode::NOT_FOUND {
+                            continue;
+                        }
                         if let Ok(body) = response.text().await {
                             if self.is_vulnerable(&body, payload) {
                                 vulnerabilities.push(Vulnerability {

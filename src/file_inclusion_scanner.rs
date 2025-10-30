@@ -97,6 +97,9 @@ impl FileInclusionScanner {
                     new_url.set_query(Some(&new_query));
 
                     let response = client.get(new_url.clone()).send().await?;
+                    if response.status() == reqwest::StatusCode::NOT_FOUND {
+                        continue;
+                    }
                     if let Ok(body) = response.text().await {
                         if let Some(vuln_type) = self.is_vulnerable(&body, payload) {
                             vulnerabilities.push(FileInclusionVulnerability {
@@ -142,6 +145,10 @@ impl FileInclusionScanner {
                     } else {
                         client.get(action_url).query(&form_data).send().await?
                     };
+
+                    if response.status() == reqwest::StatusCode::NOT_FOUND {
+                        continue;
+                    }
 
                     if let Ok(body) = response.text().await {
                         if let Some(vuln_type) = self.is_vulnerable(&body, payload) {

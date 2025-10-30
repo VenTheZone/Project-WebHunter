@@ -57,6 +57,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() {
+    std::env::set_var("RUST_BACKTRACE", "full");
     animation::run_animation();
     let cli = Cli::parse();
 
@@ -108,7 +109,17 @@ async fn main() {
     .unwrap()
     .progress_chars("#>-");
 
-    let url = Url::parse(&target_url).expect("Invalid URL");
+    let url = match Url::parse(&target_url) {
+        Ok(url) => url,
+        Err(url::ParseError::RelativeUrlWithoutBase) => {
+            eprintln!("Error: Invalid URL. Please provide an absolute URL (e.g., http://example.com)");
+            return;
+        }
+        Err(e) => {
+            eprintln!("Error: Invalid URL: {}", e);
+            return;
+        }
+    };
 
     if selection == 0 {
         let (found_urls, found_forms) = match crawl_target(url.clone(), &m, &sty).await {

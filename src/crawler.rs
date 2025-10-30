@@ -62,7 +62,12 @@ impl Crawler {
                     .send()
                     .await
                 {
-                    Ok(resp) => resp,
+                    Ok(resp) => {
+                        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+                            continue;
+                        }
+                        resp
+                    }
                     Err(_) => continue,
                 };
 

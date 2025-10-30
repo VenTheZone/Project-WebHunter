@@ -294,6 +294,10 @@ impl SqlInjectionScanner {
                 client.get(action_url).query(&form_data).send().await?
             };
 
+            if response.status() == reqwest::StatusCode::NOT_FOUND {
+                continue;
+            }
+
             if let Ok(body) = response.text().await {
                 if self.is_error_based_vulnerable(&body) {
                     vulnerabilities.push(SqlInjectionVulnerability {
@@ -352,11 +356,19 @@ impl SqlInjectionScanner {
                     .await?
             };
 
+            if true_response.status() == reqwest::StatusCode::NOT_FOUND {
+                continue;
+            }
+
             let false_response = if form.method.to_lowercase() == "post" {
                 client.post(action_url).form(&false_form_data).send().await?
             } else {
                 client.get(action_url).query(&false_form_data).send().await?
             };
+
+            if false_response.status() == reqwest::StatusCode::NOT_FOUND {
+                continue;
+            }
 
             if let (Ok(true_body), Ok(false_body)) = (true_response.text().await, false_response.text().await) {
                 if true_body != false_body {
@@ -399,12 +411,16 @@ impl SqlInjectionScanner {
                 Err(_) => continue,
             };
             let start = Instant::now();
-            if form.method.to_lowercase() == "post" {
-                let _ = client.post(action_url).form(&form_data).send().await?;
+            let response = if form.method.to_lowercase() == "post" {
+                client.post(action_url).form(&form_data).send().await?
             } else {
-                let _ = client.get(action_url).query(&form_data).send().await?;
+                client.get(action_url).query(&form_data).send().await?
             };
             let duration = start.elapsed();
+
+            if response.status() == reqwest::StatusCode::NOT_FOUND {
+                continue;
+            }
 
             if duration > Duration::from_secs(5) {
                 vulnerabilities.push(SqlInjectionVulnerability {
@@ -467,7 +483,12 @@ impl SqlInjectionScanner {
 
     async fn send_get_request(&self, client: &reqwest::Client, url: &Url) -> Option<reqwest::Response> {
         match client.get(url.clone()).send().await {
-            Ok(response) => Some(response),
+            Ok(response) => {
+                if response.status() == reqwest::StatusCode::NOT_FOUND {
+                    return None;
+                }
+                Some(response)
+            }
             Err(e) => {
                 eprintln!("[!] Error sending GET request to {}: {}", url, e);
                 None
