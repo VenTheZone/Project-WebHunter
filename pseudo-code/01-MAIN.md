@@ -6,9 +6,7 @@ IMPORT libraries:
     - clap (command-line argument parsing)
     - dialoguer (interactive user prompts)
     - indicatif (progress bars)
-    - tokio (asynchronous runtime)
     - url (URL parsing and manipulation)
-    - colored (for colored terminal output)
 
 IMPORT modules:
     - crawler (web crawling)
@@ -20,103 +18,278 @@ IMPORT modules:
     - file_inclusion_scanner (LFI/RFI scanner)
     - sql_injection_scanner (SQL injection scanner)
     - animation (startup animation)
-    - bypass_403 (403/401 bypass scanner)
-    - rate_limiter (rate limiting)
 
-STRUCTURE Config:
-    FIELDS:
-        request_delay: Duration
 
 STRUCTURE CommandLineInterface:
     FIELDS:
-        target: Optional<String>
-        target_list: Optional<String>
-        scanner: Optional<String>
-        wordlist: Optional<String>
-        force_install: Boolean
+        target: Optional<String>           // Target URL
+        scanner: Optional<String>          // Scanner type
+        wordlist: Optional<String>         // Custom wordlist path
+        force_install: Boolean             // Force tool installation
 
-FUNCTION configure_rate_limit() -> Config:
-    DESCRIPTION: Configures the rate limit for requests per second (RPS).
-    PROCESS:
-        LOOP:
-            PROMPT user for RPS (default "5")
-            VALIDATE input is a number
-            IF RPS is 0, print error and continue
-            IF RPS > 100, cap at 100 and print warning
-            PRINT current RPS
-            IF RPS > 5, print warning about IP blacklisting
-            CALCULATE delay_ms = 1000 / RPS
-            RETURN Config with request_delay
 
-ASYNC FUNCTION crawl_target(url, progress_manager, progress_style, rate_limiter) -> Result<(Vec<Url>, Vec<form::Form>), reqwest::Error>:
-    DESCRIPTION: Crawls the target website to discover URLs and forms.
+ASYNC FUNCTION crawl_target(url, progress_manager, progress_style):
+    DESCRIPTION: Crawls the target website to discover URLs and forms
+
+    INPUT:
+        url: URL object
+        progress_manager: MultiProgress manager
+        progress_style: ProgressStyle template
+
+    OUTPUT:
+        Result containing (Vector<URL>, Vector<Form>) or Error
+
     PROCESS:
-        CREATE new crawler with url and rate_limiter
-        CREATE and configure progress bar
-        CALL crawler.crawl()
-        HANDLE result and return Ok or Err
+        CREATE new crawler with target URL
+        CREATE progress bar with given style
+        ADD progress bar to manager
+
+        TRY:
+            CALL crawler.crawl() with progress bar
+            STORE results as (urls, forms)
+            SET progress bar message "Crawling complete"
+            RETURN Ok((urls, forms))
+        CATCH error:
+            SET progress bar message "Crawling failed: {error}"
+            PRINT error message to stderr
+            RETURN Err(error)
+
 
 ASYNC FUNCTION main():
-    DESCRIPTION: Main entry point of the application.
-    PROCESS:
-        RUN intro animation
-        PARSE CLI arguments
-        CONFIGURE rate limit
-        CREATE rate limiter
-        GET target URLs from --target or --target_list argument, or prompt user
-        GET concurrency level if --target_list is used
-        CREATE semaphore with concurrency level
-        CREATE vector for tasks
-        FOR each target_url:
-            SPAWN a new async task:
-                ACQUIRE semaphore permit
-                CALL run_scan with CLI args, rate_limiter, and target_url
-        AWAIT all tasks to complete
+    DESCRIPTION: Main entry point of the application
 
-ASYNC FUNCTION run_scan(cli, rate_limiter, target_url):
-    DESCRIPTION: Runs the selected scanner on a single target.
     PROCESS:
-        DETERMINE scanner selection from CLI argument or user prompt
-        INITIALIZE multi-progress bar
-        PARSE target_url into a Url object, handle errors
-        CREATE reporter
+        SET environment variable RUST_BACKTRACE to "full"
+
+        // Display startup animation
+        CALL run_animation()
+
+        // Parse command-line arguments
+        PARSE CommandLineInterface from arguments
+
+        // Get target URL
+        IF target is provided via CLI:
+            SET target_url = provided target
+        ELSE:
+            PROMPT user "Enter the target website URL"
+            IF prompt fails:
+                PRINT "Could not read target URL. Use --target argument."
+                EXIT
+            SET target_url = prompted value
+
+        // Get scanner selection
+        IF scanner is provided via CLI:
+            MAP scanner string to selection index:
+                "xss" → 0
+                "dir" → 1
+                "file" → 2
+                "sql" → 3
+        ELSE:
+            PROMPT user with options:
+                [0] "XSS"
+                [1] "Open Directory"
+                [2] "File Inclusion"
+                [3] "SQL Injection"
+            IF prompt fails:
+                PRINT "Could not read selection. Use --scanner argument."
+                EXIT
+            SET selection = user's choice
+
+        // Initialize progress tracking
+        CREATE multi-progress manager
+        CREATE progress style with template:
+            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}]
+             {bytes}/{total_bytes} ({eta}) {msg}"
+        SET progress characters "#>-"
+
+        // Parse and validate URL
+        TRY:
+            PARSE target_url string into URL object
+        CATCH RelativeUrlWithoutBase:
+            PRINT "Error: Invalid URL. Please provide absolute URL (e.g., http://example.com)"
+            EXIT
+        CATCH other parse error:
+            PRINT "Error: Invalid URL: {error}"
+            EXIT
+
+
+        // Execute selected scanner
         SWITCH selection:
-            CASE 0 (XSS):
-                CRAWL target to get URLs and forms
-                CREATE XssScanner
-                CREATE and configure progress bar
-                CALL scanner.scan()
-                HANDLE result
-            CASE 1 (Open Directory):
-                CHECK if feroxbuster is installed, prompt to install if needed
-                CREATE DirScanner
-                CREATE and configure progress bar
-                CALL dir_scanner.scan()
-                HANDLE result
-            CASE 2 (File Inclusion):
-                CRAWL target to get URLs and forms
-                CREATE FileInclusionScanner
-                CREATE and configure progress bar
-                CALL scanner.scan()
-                HANDLE result
-            CASE 3 (SQL Injection):
-                CRAWL target to get URLs and forms
-                CREATE SqlInjectionScanner
-                CREATE and configure progress bar
-                CALL scanner.scan()
-                HANDLE result
-            CASE 4 (403/401 Bypass):
-                CREATE BypassScanner
-                CREATE and configure progress bar
-                CALL bypass_scanner.scan()
-                HANDLE result
 
-FUNCTION read_lines(filename) -> io::Result<Vec<String>>:
-    DESCRIPTION: Reads lines from a file into a vector of strings.
-    PROCESS:
-        OPEN file
-        READ lines into a vector
-        RETURN vector
+            CASE 0 (XSS Scanner):
+                // Crawl the target
+                TRY:
+                    CALL crawl_target(url, progress_manager, progress_style)
+                    STORE as (found_urls, found_forms)
+                CATCH:
+                    EXIT
+
+                // Initialize XSS scanner
+                CREATE xss_scanner with found_urls and found_forms
+
+                // Calculate total payloads
+                CALCULATE total_tests = (urls * payload_count) + (forms * payload_count)
+                CREATE progress bar with total_tests
+                SET progress bar style
+                ADD progress bar to manager
+
+                // Run scan
+                TRY:
+                    CALL scanner.scan() with progress bar
+                    STORE vulnerabilities
+                    SET progress bar message "Scanning complete"
+
+                    IF no vulnerabilities found:
+                        PRINT "No XSS vulnerabilities found."
+                    ELSE:
+                        PRINT "Found {count} XSS vulnerabilities:"
+                        CREATE reporter
+                        TRY:
+                            CALL reporter.report(vulnerabilities, url)
+                            CALCULATE domain_name = url.domain replace "." with "_"
+                            PRINT "Report saved to {domain_name}/XSS-output.md"
+                        CATCH error:
+                            PRINT "Error writing report: {error}"
+                CATCH error:
+                    SET progress bar message "Scanning failed: {error}"
+                    PRINT "Error scanning for XSS: {error}"
+
+
+            CASE 1 (Open Directory Scanner):
+                // Check if feroxbuster is installed
+                IF force_install OR NOT is_feroxbuster_installed():
+                    IF force_install:
+                        SET confirm = 0  // Yes
+                    ELSE:
+                        PROMPT "Feroxbuster is not installed. Install it now?"
+                        OPTIONS: ["Yes", "No"]
+                        SET confirm = user's choice
+
+                    IF confirm == 0:  // Yes
+                        CREATE spinner progress bar
+                        SET message "Installing feroxbuster..."
+                        ADD to progress manager
+
+                        TRY:
+                            CALL install_feroxbuster()
+                            SET message "Feroxbuster installed successfully"
+                        CATCH error:
+                            SET message "Failed to install feroxbuster: {error}"
+                            EXIT
+                    ELSE:
+                        PRINT "Feroxbuster is required for Open Directory Scanner."
+                        EXIT
+
+                // Run directory scan
+                CREATE spinner progress bar
+                SET progress bar style
+                ADD to progress manager
+
+                CREATE dir_scanner with url, progress_bar, wordlist
+
+                TRY:
+                    CALL dir_scanner.scan()
+                    STORE found_dirs
+                    SET progress bar message "Directory scan complete"
+
+                    IF no directories found:
+                        PRINT "No open directories found."
+                    ELSE:
+                        PRINT "Found {count} open directories:"
+                        CREATE reporter
+                        SET wordlist_name = wordlist OR "default_wordlist.txt"
+
+                        TRY:
+                            CALL reporter.report_dirs(found_dirs, url, wordlist_name)
+                            CALCULATE domain_name = url.domain replace "." with "_"
+                            PRINT "Report saved to {domain_name}/Open-Directories-output.md"
+                        CATCH error:
+                            PRINT "Error writing report: {error}"
+                CATCH error:
+                    SET progress bar message "Directory scan failed: {error}"
+                    PRINT "Error scanning for directories: {error}"
+
+
+            CASE 2 (File Inclusion Scanner):
+                // Crawl the target
+                TRY:
+                    CALL crawl_target(url, progress_manager, progress_style)
+                    STORE as (found_urls, found_forms)
+                CATCH:
+                    EXIT
+
+                // Initialize file inclusion scanner
+                CREATE file_inclusion_scanner with found_urls and found_forms
+
+                // Calculate total tests
+                CALCULATE total_tests = (urls * payload_count) + (forms * payload_count)
+                CREATE progress bar with total_tests
+                SET progress bar style
+                ADD progress bar to manager
+
+                // Run scan
+                TRY:
+                    CALL scanner.scan() with progress bar
+                    STORE vulnerabilities
+                    SET progress bar message "Scanning complete"
+
+                    IF no vulnerabilities found:
+                        PRINT "No file inclusion vulnerabilities found."
+                    ELSE:
+                        PRINT "Found {count} file inclusion vulnerabilities:"
+                        CREATE reporter
+
+                        TRY:
+                            CALL reporter.report_file_inclusion(vulnerabilities, url)
+                            CALCULATE domain_name = url.domain replace "." with "_"
+                            PRINT "Report saved to {domain_name}/File-Inclusion-output.txt"
+                        CATCH error:
+                            PRINT "Error writing report: {error}"
+                CATCH error:
+                    SET progress bar message "Scanning failed: {error}"
+                    PRINT "Error scanning for file inclusion: {error}"
+
+
+            CASE 3 (SQL Injection Scanner):
+                // Crawl the target
+                TRY:
+                    CALL crawl_target(url, progress_manager, progress_style)
+                    STORE as (found_urls, found_forms)
+                CATCH:
+                    EXIT
+
+                // Initialize SQL injection scanner
+                CREATE sql_injection_scanner with found_urls and found_forms
+
+                // Calculate total tests
+                CALCULATE total_tests = (urls * payload_count) + (forms * payload_count)
+                CREATE progress bar with total_tests
+                SET progress bar style
+                ADD progress bar to manager
+
+                // Run scan
+                TRY:
+                    CALL scanner.scan() with progress bar
+                    STORE vulnerabilities
+                    SET progress bar message "Scanning complete"
+
+                    IF no vulnerabilities found:
+                        PRINT "No SQL injection vulnerabilities found."
+                    ELSE:
+                        PRINT "Found {count} SQL injection vulnerabilities:"
+                        CREATE reporter
+
+                        TRY:
+                            CALL reporter.report_sql_injection(vulnerabilities, url)
+                            CALCULATE domain_name = url.domain replace "." with "_"
+                            PRINT "Report saved to {domain_name}/Sql-Injection-output.txt"
+                        CATCH error:
+                            PRINT "Error writing report: {error}"
+                CATCH error:
+                    SET progress bar message "Scanning failed: {error}"
+                    PRINT "Error scanning for SQL injection: {error}"
+
+    END main
 ```
 
 ## Key Design Patterns
@@ -127,11 +300,12 @@ PATTERN: Command Pattern
     - Modular scanner selection
 
 PATTERN: Strategy Pattern
-    - Different scanning strategies (XSS, SQLi, LFI, Directory, 403 Bypass)
+    - Different scanning strategies (XSS, SQLi, LFI, Directory)
     - Interchangeable at runtime
 
-PATTERN: Concurrency
-    - Tokio and Semaphores are used to handle multiple targets concurrently.
+PATTERN: Template Method
+    - Common workflow: crawl → scan → report
+    - Specific implementation in each scanner
 
 ERROR HANDLING:
     - Graceful degradation on errors

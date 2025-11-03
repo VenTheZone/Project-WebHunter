@@ -17,7 +17,7 @@ pub fn run_intro_animation() {
  | |/ |/ / -_) _ \  / _  / // / _ \/ __/ -_) __/
  |__/|__/\__/_.__/ /_//_/\_,_/_//_/\__/\__/_/   
 
-                                                    "#;
+"#;
     const AUTHOR: &str = "by VenTheZone";
 
     let mut stdout = stdout();

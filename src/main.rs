@@ -114,7 +114,14 @@ async fn main() {
     animation::run_intro_animation();
     let cli = Cli::parse();
 
-    let config = configure_rate_limit();
+    let config = if cli.scanner.is_some() {
+        println!("Running at 5 RPS (default for non-interactive mode).");
+        Config {
+            request_delay: Duration::from_millis(200), // 5 RPS
+        }
+    } else {
+        configure_rate_limit()
+    };
     let rate_limiter = Arc::new(rate_limiter::RateLimiter::new(config.request_delay));
 
     let targets = if let Some(ref target_list) = cli.target_list {
@@ -150,13 +157,18 @@ async fn main() {
     let mut tasks = vec![];
 
     for target_url in targets {
+        let mut url_with_scheme = target_url.clone();
+        if !url_with_scheme.starts_with("http://") && !url_with_scheme.starts_with("https://") {
+            url_with_scheme = format!("http://{}", url_with_scheme);
+        }
+
         let cli = Arc::new(cli.clone());
         let rate_limiter = Arc::clone(&rate_limiter);
         let semaphore = Arc::clone(&semaphore);
 
         tasks.push(tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
-            run_scan(&cli, &rate_limiter, &target_url).await;
+            run_scan(&cli, &rate_limiter, &url_with_scheme).await;
         }));
     }
 

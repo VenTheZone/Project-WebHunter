@@ -15,14 +15,11 @@ MAIN COMPONENTS:
 │   ├── XSS Scanner (xss.rs)
 │   ├── SQL Injection Scanner (sql_injection_scanner.rs)
 │   ├── File Inclusion Scanner (file_inclusion_scanner.rs)
-│   ├── Directory Scanner (dir_scanner.rs)
-│   └── Bypass Scanner (bypass_403.rs)
+│   └── Directory Scanner (dir_scanner.rs)
 ├── Form Parser (form.rs)
 ├── Reporter (reporter.rs)
 ├── Dependency Manager (dependency_manager.rs)
-├── Animation Module (animation.rs)
-├── Rate Limiter (rate_limiter.rs)
-└── Snapshot Module (snapshot.rs)
+└── Animation Module (animation.rs)
 ```
 
 ## Core Workflow
@@ -48,8 +45,6 @@ PROGRAM WebHunter:
             RUN file_inclusion_scan
         ELSE IF scanner_type == "SQL Injection":
             RUN sql_injection_scan
-        ELSE IF scanner_type == "Bypass":
-            RUN bypass_403_scan
 
     GENERATE_REPORT:
         CREATE output directory based on target domain
@@ -64,19 +59,25 @@ PROGRAM WebHunter:
 ```pseudo
 DEPENDENCY_GRAPH:
     main.rs
+    ├── Uses: clap (CLI parsing)
+    ├── Uses: dialoguer (interactive prompts)
+    ├── Uses: indicatif (progress bars)
     └── Imports all scanner modules
 
     crawler.rs
-    └── Uses: form.rs, rate_limiter.rs
+    ├── Depends on: reqwest (HTTP client)
+    ├── Depends on: scraper (HTML parsing)
+    └── Uses: form.rs (form data structures)
 
     Each Scanner Module:
-    └── Uses: form.rs, rate_limiter.rs, reporter.rs
-
-    bypass_403.rs
-    └── Uses: snapshot.rs
+    ├── Depends on: reqwest (HTTP requests)
+    ├── Depends on: form.rs (form handling)
+    ├── Uses: wordlist files (payloads)
+    └── Returns: vulnerability list
 
     reporter.rs
-    └── Generates: markdown and text reports
+    ├── Depends on: chrono (timestamps)
+    └── Generates: markdown reports
 ```
 
 ## Data Flow
@@ -94,16 +95,15 @@ DATA_FLOW:
 
 ```pseudo
 FEATURES:
-    - Multi-scanner architecture (XSS, SQLi, LFI/RFI, Directory, 403/401 Bypass)
+    - Multi-scanner architecture (XSS, SQLi, LFI/RFI, Directory)
     - Intelligent web crawling with depth control
     - Form detection and testing
     - Multiple user-agent rotation
-    - Configurable rate limiting
+    - Rate limiting and polite scanning
     - Progress visualization
-    - Comprehensive reporting in markdown and text formats
+    - Comprehensive reporting in markdown format
     - External tool integration (feroxbuster)
     - Automatic dependency management
-    - Snapshotting of bypass evidence
 ```
 
 ## Security Considerations
@@ -113,6 +113,7 @@ ETHICAL_USAGE:
     - Tool designed for authorized security testing only
     - Implements rate limiting to prevent DoS
     - Respects HTTP error codes (404 handling)
-    - Delays between requests
+    - Delays between requests (50-200ms)
+    - No aggressive scanning by default
     - Clear vulnerability reporting for remediation
 ```
