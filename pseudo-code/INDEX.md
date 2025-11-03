@@ -15,8 +15,9 @@ Quick reference guide for navigating the pseudo-code documentation.
 | 6 | [06-DIRECTORY-SCANNER.md](06-DIRECTORY-SCANNER.md) | dir_scanner.rs | ~350 | Directory brute-forcing with feroxbuster |
 | 7 | [07-REPORTER.md](07-REPORTER.md) | reporter.rs | ~500 | Report generation in multiple formats |
 | 8 | [08-SUPPORTING-MODULES.md](08-SUPPORTING-MODULES.md) | form.rs, etc. | ~400 | Data structures, utilities, animation |
+| 9 | [09-403-BYPASS-SCANNER.md](09-403-BYPASS-SCANNER.md) | bypass_403.rs | ~300 | 403/401 bypass detection and snapshotting |
 
-**Total Lines of Pseudo-Code**: ~3,600 lines
+**Total Lines of Pseudo-Code**: ~3,900 lines
 
 ## Quick Navigation by Topic
 

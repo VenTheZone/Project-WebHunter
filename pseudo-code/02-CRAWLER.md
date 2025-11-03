@@ -84,7 +84,7 @@ ASYNC FUNCTION Crawler::crawl(progress_bar):
                 TRY:
                     SEND GET request to url with user_agent header
                     STORE response
-                    
+
                     // Skip 404 responses
                     IF response.status == 404:
                         CONTINUE to next URL
@@ -97,10 +97,10 @@ ASYNC FUNCTION Crawler::crawl(progress_bar):
                 TRY:
                     GET response body as text
                     PARSE body as HTML document
-                    
+
                     // Extract links (URLs to crawl)
                     SELECT all elements matching "a, img, link, script"
-                    
+
                     FOR EACH element IN selected_elements:
                         DETERMINE attribute to extract:
                             IF element is "a" OR "link":
@@ -109,51 +109,51 @@ ASYNC FUNCTION Crawler::crawl(progress_bar):
                                 GET "src" attribute
                             ELSE:
                                 SKIP element
-                        
+
                         IF attribute exists:
                             TRY:
                                 RESOLVE relative URL against current url
                                 STORE as new_url
-                                
+
                                 // Only follow same-domain HTTP(S) URLs
                                 IF new_url.domain == target_url.domain
                                    AND (new_url.scheme == "http" OR new_url.scheme == "https"):
                                     REMOVE fragment from new_url
-                                    
+
                                     IF new_url NOT IN visited_urls:
                                         ADD new_url to next_urls
                             CATCH URL parsing error:
                                 SKIP this URL
-                    
+
                     // Extract forms
                     SELECT all form elements
-                    
+
                     FOR EACH form_element IN forms:
                         EXTRACT action = form_element.attribute("action") OR ""
                         EXTRACT method = form_element.attribute("method") OR "get"
-                        
+
                         INITIALIZE inputs as empty Vector
                         SELECT all input elements within form
-                        
+
                         FOR EACH input_element IN inputs:
                             EXTRACT name = input_element.attribute("name") OR ""
-                            
+
                             // Skip inputs without names
                             IF name is empty:
                                 CONTINUE
-                            
+
                             EXTRACT value = input_element.attribute("value") OR ""
-                            
+
                             CREATE FormInput with name and value
                             ADD to inputs Vector
-                        
+
                         CREATE Form with action, method, inputs, and current url
                         ADD form to self.forms
-                
+
                 CATCH parsing error:
                     // Silently skip malformed HTML
                     PASS
-                
+
                 // Rate limiting
                 SLEEP for 200 milliseconds
             
@@ -182,14 +182,14 @@ HELPER STRUCTURE Form:
 ```pseudo
 CRAWLING ALGORITHM:
     Type: Breadth-First Search (BFS) with depth limit
-    
+
     Time Complexity: O(N * D)
         N = number of pages
         D = max depth (2)
-    
+
     Space Complexity: O(N)
         N = total URLs discovered
-    
+
     Rate Limiting:
         - 200ms delay between requests
         - ~5 requests per second
@@ -212,28 +212,28 @@ USER AGENT ROTATION:
 EDGE_CASES:
     1. 404 Not Found:
        - Skip and continue to next URL
-    
+
     2. Relative URLs:
        - Resolved against current page URL
-    
+
     3. Fragment identifiers (#):
        - Removed (same page, different anchor)
-    
+
     4. Cross-domain links:
        - Ignored (only crawl target domain)
-    
+
     5. Non-HTTP(S) schemes:
        - Ignored (e.g., mailto:, javascript:)
-    
+
     6. Forms without inputs:
        - Still recorded but won't be tested
-    
+
     7. Inputs without names:
        - Skipped (can't be submitted)
-    
+
     8. Network errors:
        - Silently caught, continue crawling
-    
+
     9. Malformed HTML:
        - Parser handles gracefully
 ```

@@ -1,35 +1,58 @@
 use crate::form::{Form, FormInput};
+use crate::rate_limiter::RateLimiter;
 use indicatif::ProgressBar;
-use reqwest;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
-use std::time::Duration;
-use tokio::time::sleep;
+use std::fs;
+use std::io::{self, BufRead};
+use std::sync::Arc;
 use url::Url;
+use rand::seq::SliceRandom;
 
 pub struct Crawler {
     target_url: Url,
     visited_urls: HashSet<Url>,
-    user_agents: Vec<&'static str>,
+    user_agents: Vec<String>,
+    http_headers: Vec<(String, String)>,
     forms: Vec<Form>,
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl Crawler {
-    pub fn new(target_url: Url) -> Self {
+    pub fn new(target_url: Url, rate_limiter: Arc<RateLimiter>) -> Self {
         Self {
             target_url,
             visited_urls: HashSet::new(),
-            user_agents: vec![
-                "Googlebot",
-                "Bingbot",
-                "Yahoo! Slurp",
-                "DuckDuckBot",
-                "Facebot",
-                "curl/7.68.0",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            ],
+            user_agents: Self::load_list("wordlists/user_agents.txt"),
+            http_headers: Self::load_header_payloads(),
             forms: Vec::new(),
+            rate_limiter,
         }
+    }
+
+    fn load_list(path: &str) -> Vec<String> {
+        let mut list = Vec::new();
+        if let Ok(file) = fs::File::open(path) {
+            let reader = io::BufReader::new(file);
+            for line in reader.lines().map_while(Result::ok) {
+                list.push(line);
+            }
+        }
+        list
+    }
+
+    fn load_header_payloads() -> Vec<(String, String)> {
+        let mut payloads = Vec::new();
+        if let Ok(file) = fs::File::open("wordlists/http_headers.txt") {
+            let reader = io::BufReader::new(file);
+            for line in reader.lines().map_while(Result::ok) {
+                let parts: Vec<&str> = line.splitn(2, ':').collect();
+                if parts.len() == 2 {
+                    payloads.push((parts[0].to_string(), parts[1].trim().to_string()));
+                }
+            }
+        }
+        payloads
     }
 
     pub async fn crawl(
@@ -38,7 +61,7 @@ impl Crawler {
     ) -> Result<(Vec<Url>, Vec<Form>), reqwest::Error> {
         let mut urls_to_visit = vec![self.target_url.clone()];
         let mut found_urls = vec![];
-        let max_depth = 2;
+        let max_depth = 3;
 
         for depth in 0..max_depth {
             let mut next_urls = HashSet::new();
@@ -55,12 +78,15 @@ impl Crawler {
                 found_urls.push(url.clone());
 
                 let client = reqwest::Client::new();
-                let user_agent = self.user_agents[depth % self.user_agents.len()];
-                let response = match client
-                    .get(url.clone())
-                    .header("User-Agent", user_agent)
-                    .send()
-                    .await
+                let user_agent = &self.user_agents[depth % self.user_agents.len()];
+                let mut request = client.get(url.clone()).header("User-Agent", user_agent);
+
+                if let Some((header_name, header_value)) = self.http_headers.choose(&mut rand::thread_rng()) {
+                    request = request.header(header_name, header_value);
+                }
+
+                self.rate_limiter.wait().await;
+                let response = match request.send().await
                 {
                     Ok(resp) => {
                         if resp.status() == reqwest::StatusCode::NOT_FOUND {
@@ -127,7 +153,6 @@ impl Crawler {
                         });
                     }
                 }
-                sleep(Duration::from_millis(200)).await;
             }
             urls_to_visit.extend(next_urls);
         }

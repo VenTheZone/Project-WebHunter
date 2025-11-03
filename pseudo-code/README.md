@@ -117,13 +117,13 @@ Examine:
 ```pseudo
 FUNCTION function_name(parameters):
     DESCRIPTION: What the function does
-    
+
     INPUT:
         parameter: type and description
-    
+
     OUTPUT:
         return type and description
-    
+
     ALGORITHM:
         STEP 1: Description
         STEP 2: Description

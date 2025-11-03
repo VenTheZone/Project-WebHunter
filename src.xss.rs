@@ -1,10 +1,11 @@
 use crate::form::Form;
-use crate::rate_limiter::RateLimiter;
 use crate::reporter::Reporter;
 use indicatif::ProgressBar;
 use scraper::{Html, Selector};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::sleep;
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -22,7 +23,7 @@ pub struct XssScanner<'a> {
     forms: Vec<Form>,
     payloads: Vec<String>,
     reporter: &'a Arc<Reporter>,
-    rate_limiter: Arc<RateLimiter>,
+    request_delay: Duration,
 }
 
 use std::fs;
@@ -33,7 +34,7 @@ impl<'a> XssScanner<'a> {
         target_urls: Vec<Url>,
         forms: Vec<Form>,
         reporter: &'a Arc<Reporter>,
-        rate_limiter: Arc<RateLimiter>,
+        request_delay: Duration,
     ) -> Self {
         let mut payloads = Vec::new();
         if let Ok(paths) = fs::read_dir("webhunter/wordlists/xss") {
@@ -56,7 +57,7 @@ impl<'a> XssScanner<'a> {
             forms,
             payloads,
             reporter,
-            rate_limiter,
+            request_delay,
         }
     }
 
@@ -74,13 +75,12 @@ impl<'a> XssScanner<'a> {
         let client = reqwest::Client::new();
 
         for url in &self.target_urls {
-            let query_pairs: Vec<(String, String)> = url.query_pairs().into_owned().collect();
-            if query_pairs.is_empty() {
+            if url.query_pairs().count() == 0 {
                 continue;
             }
-
-            'param_loop: for i in 0..query_pairs.len() {
-                for payload in &self.payloads {
+            for payload in &self.payloads {
+                let query_pairs: Vec<(String, String)> = url.query_pairs().into_owned().collect();
+                for i in 0..query_pairs.len() {
                     let mut new_query_parts = Vec::new();
                     let mut tested_param = String::new();
                     for (j, (key, value)) in query_pairs.iter().enumerate() {
@@ -95,9 +95,7 @@ impl<'a> XssScanner<'a> {
                     let mut new_url = url.clone();
                     new_url.set_query(Some(&new_query));
 
-                    self.rate_limiter.wait().await;
                     let response = client.get(new_url.clone()).send().await?;
-                    pb.inc(1);
                     if response.status() == reqwest::StatusCode::NOT_FOUND {
                         continue;
                     }
@@ -113,9 +111,10 @@ impl<'a> XssScanner<'a> {
                             };
                             println!("[+] XSS Found: {} in {}", vuln.payload, vuln.parameter);
                             self.reporter.report_xss(&vuln);
-                            continue 'param_loop;
                         }
                     }
+                    sleep(self.request_delay).await;
+                    pb.inc(1);
                 }
             }
         }
@@ -126,8 +125,8 @@ impl<'a> XssScanner<'a> {
         let client = reqwest::Client::new();
 
         for form in &self.forms {
-            'input_loop: for i in 0..form.inputs.len() {
-                for payload in &self.payloads {
+            for payload in &self.payloads {
+                for i in 0..form.inputs.len() {
                     let mut form_data = HashMap::new();
                     let mut tested_param = String::new();
                     for (j, input) in form.inputs.iter().enumerate() {
@@ -147,7 +146,6 @@ impl<'a> XssScanner<'a> {
                     let response_res;
                     let poc_url;
 
-                    self.rate_limiter.wait().await;
                     if form.method.to_lowercase() == "post" {
                         poc_url = base_action_url.clone();
                         let original_query =
@@ -171,7 +169,6 @@ impl<'a> XssScanner<'a> {
                         response_res = client.get(poc_url.clone()).send().await;
                     };
 
-                    pb.inc(1);
                     if let Ok(response) = response_res {
                         if response.status() == reqwest::StatusCode::NOT_FOUND {
                             continue;
@@ -188,10 +185,11 @@ impl<'a> XssScanner<'a> {
                                 };
                                 println!("[+] XSS Found: {} in {}", vuln.payload, vuln.parameter);
                                 self.reporter.report_xss(&vuln);
-                                continue 'input_loop;
                             }
                         }
                     }
+                    sleep(self.request_delay).await;
+                    pb.inc(1);
                 }
             }
         }

@@ -1,13 +1,13 @@
 use crate::form::Form;
+use crate::rate_limiter::RateLimiter;
+use crate::reporter::Reporter;
 use indicatif::ProgressBar;
-use reqwest;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::time::Duration;
-use tokio::time::sleep;
+use std::sync::Arc;
 use url::Url;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct FileInclusionVulnerability {
     pub url: Url,
     pub parameter: String,
@@ -18,28 +18,30 @@ pub struct FileInclusionVulnerability {
 use std::fs;
 use std::io::{self, BufRead};
 
-pub struct FileInclusionScanner {
+pub struct FileInclusionScanner<'a> {
     target_urls: Vec<Url>,
     forms: Vec<Form>,
     payloads: Vec<String>,
+    reporter: &'a Arc<Reporter>,
+    rate_limiter: Arc<RateLimiter>,
 }
 
-impl FileInclusionScanner {
-    pub fn new(target_urls: Vec<Url>, forms: Vec<Form>) -> Self {
+impl<'a> FileInclusionScanner<'a> {
+    pub fn new(
+        target_urls: Vec<Url>,
+        forms: Vec<Form>,
+        reporter: &'a Arc<Reporter>,
+        rate_limiter: Arc<RateLimiter>,
+    ) -> Self {
         let mut payloads = Vec::new();
-        if let Ok(paths) = fs::read_dir("wordlists/file_inclusion") {
-            println!("Reading payloads from wordlists/file_inclusion...");
-            for path in paths {
-                if let Ok(path) = path {
-                    if let Some(extension) = path.path().extension() {
-                        if extension == "txt" {
-                            if let Ok(file) = fs::File::open(path.path()) {
-                                let reader = io::BufReader::new(file);
-                                for line in reader.lines() {
-                                    if let Ok(line) = line {
-                                        payloads.push(line);
-                                    }
-                                }
+        if let Ok(paths) = fs::read_dir("webhunter/wordlists/file_inclusion") {
+            for path in paths.flatten() {
+                if let Some(extension) = path.path().extension() {
+                    if extension == "txt" {
+                        if let Ok(file) = fs::File::open(path.path()) {
+                            let reader = io::BufReader::new(file);
+                            for line in reader.lines().map_while(Result::ok) {
+                                payloads.push(line);
                             }
                         }
                     }
@@ -51,6 +53,8 @@ impl FileInclusionScanner {
             target_urls,
             forms,
             payloads,
+            reporter,
+            rate_limiter,
         }
     }
 
@@ -61,27 +65,26 @@ impl FileInclusionScanner {
     pub async fn scan(
         &self,
         pb: &ProgressBar,
-    ) -> Result<Vec<FileInclusionVulnerability>, reqwest::Error> {
-        let mut vulnerabilities = self.scan_urls(pb).await?;
-        vulnerabilities.extend(self.scan_forms(pb).await?);
-        Ok(vulnerabilities)
+    ) -> Result<(), reqwest::Error> {
+        self.scan_urls(pb).await?;
+        self.scan_forms(pb).await?;
+        Ok(())
     }
 
     async fn scan_urls(
         &self,
         pb: &ProgressBar,
-    ) -> Result<Vec<FileInclusionVulnerability>, reqwest::Error> {
-        let mut vulnerabilities = Vec::new();
+    ) -> Result<(), reqwest::Error> {
         let client = reqwest::Client::new();
 
         for url in &self.target_urls {
-            if url.query_pairs().count() == 0 {
+            let query_pairs: Vec<(String, String)> = url.query_pairs().into_owned().collect();
+            if query_pairs.is_empty() {
                 continue;
             }
 
-            for payload in &self.payloads {
-                let query_pairs: Vec<(String, String)> = url.query_pairs().into_owned().collect();
-                for i in 0..query_pairs.len() {
+            'param_loop: for i in 0..query_pairs.len() {
+                for payload in &self.payloads {
                     let mut new_query_parts = Vec::new();
                     let mut tested_param = String::new();
                     for (j, (key, value)) in query_pairs.iter().enumerate() {
@@ -96,38 +99,40 @@ impl FileInclusionScanner {
                     let mut new_url = url.clone();
                     new_url.set_query(Some(&new_query));
 
+                    self.rate_limiter.wait().await;
                     let response = client.get(new_url.clone()).send().await?;
+                    pb.inc(1);
                     if response.status() == reqwest::StatusCode::NOT_FOUND {
                         continue;
                     }
                     if let Ok(body) = response.text().await {
                         if let Some(vuln_type) = self.is_vulnerable(&body, payload) {
-                            vulnerabilities.push(FileInclusionVulnerability {
+                            let vuln = FileInclusionVulnerability {
                                 url: url.clone(),
-                                parameter: tested_param,
+                                parameter: tested_param.clone(),
                                 payload: payload.to_string(),
                                 vuln_type,
-                            });
+                            };
+                            println!("[+] File Inclusion Found: {} in {}", vuln.payload, vuln.parameter);
+                            self.reporter.report_file_inclusion(&vuln);
+                            continue 'param_loop;
                         }
                     }
                 }
-                pb.inc(1);
-                sleep(Duration::from_millis(50)).await;
             }
         }
-        Ok(vulnerabilities)
+        Ok(())
     }
 
     async fn scan_forms(
         &self,
         pb: &ProgressBar,
-    ) -> Result<Vec<FileInclusionVulnerability>, reqwest::Error> {
-        let mut vulnerabilities = Vec::new();
+    ) -> Result<(), reqwest::Error> {
         let client = reqwest::Client::new();
 
         for form in &self.forms {
-            for payload in &self.payloads {
-                for i in 0..form.inputs.len() {
+            'input_loop: for i in 0..form.inputs.len() {
+                for payload in &self.payloads {
                     let mut form_data = HashMap::new();
                     let mut tested_param = String::new();
                     for (j, input) in form.inputs.iter().enumerate() {
@@ -140,33 +145,36 @@ impl FileInclusionScanner {
                     }
 
                     let action_url = form.url.join(&form.action).unwrap();
+                    self.rate_limiter.wait().await;
                     let response = if form.method.to_lowercase() == "post" {
                         client.post(action_url).form(&form_data).send().await?
                     } else {
                         client.get(action_url).query(&form_data).send().await?
                     };
 
+                    pb.inc(1);
                     if response.status() == reqwest::StatusCode::NOT_FOUND {
                         continue;
                     }
 
                     if let Ok(body) = response.text().await {
                         if let Some(vuln_type) = self.is_vulnerable(&body, payload) {
-                            vulnerabilities.push(FileInclusionVulnerability {
+                            let vuln = FileInclusionVulnerability {
                                 url: form.url.clone(),
-                                parameter: tested_param,
+                                parameter: tested_param.clone(),
                                 payload: payload.to_string(),
                                 vuln_type,
-                            });
+                            };
+                            println!("[+] File Inclusion Found: {} in {}", vuln.payload, vuln.parameter);
+                            self.reporter.report_file_inclusion(&vuln);
+                            continue 'input_loop;
                         }
                     }
                 }
-                pb.inc(1);
-                sleep(Duration::from_millis(50)).await;
             }
         }
 
-        Ok(vulnerabilities)
+        Ok(())
     }
 
     fn is_vulnerable(&self, body: &str, payload: &str) -> Option<String> {
