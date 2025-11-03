@@ -1,10 +1,9 @@
 use crate::form::{Form, FormInput};
+use crate::rate_limiter::RateLimiter;
 use indicatif::ProgressBar;
-use reqwest;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
-use std::time::Duration;
-use tokio::time::sleep;
+use std::sync::Arc;
 use url::Url;
 
 pub struct Crawler {
@@ -12,10 +11,11 @@ pub struct Crawler {
     visited_urls: HashSet<Url>,
     user_agents: Vec<&'static str>,
     forms: Vec<Form>,
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl Crawler {
-    pub fn new(target_url: Url) -> Self {
+    pub fn new(target_url: Url, rate_limiter: Arc<RateLimiter>) -> Self {
         Self {
             target_url,
             visited_urls: HashSet::new(),
@@ -29,6 +29,7 @@ impl Crawler {
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
             ],
             forms: Vec::new(),
+            rate_limiter,
         }
     }
 
@@ -38,7 +39,7 @@ impl Crawler {
     ) -> Result<(Vec<Url>, Vec<Form>), reqwest::Error> {
         let mut urls_to_visit = vec![self.target_url.clone()];
         let mut found_urls = vec![];
-        let max_depth = 2;
+        let max_depth = 3;
 
         for depth in 0..max_depth {
             let mut next_urls = HashSet::new();
@@ -56,6 +57,7 @@ impl Crawler {
 
                 let client = reqwest::Client::new();
                 let user_agent = self.user_agents[depth % self.user_agents.len()];
+                self.rate_limiter.wait().await;
                 let response = match client
                     .get(url.clone())
                     .header("User-Agent", user_agent)
@@ -127,7 +129,6 @@ impl Crawler {
                         });
                     }
                 }
-                sleep(Duration::from_millis(200)).await;
             }
             urls_to_visit.extend(next_urls);
         }

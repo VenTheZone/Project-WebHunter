@@ -1,7 +1,14 @@
 use clap::Parser;
 use dialoguer::{theme::ColorfulTheme, Input, Select};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use std::sync::Arc;
+use tokio::sync::Semaphore;
 use url::Url;
+use std::time::Duration;
+use std::fs::File;
+use std::io::{self, BufRead};
+use std::path::Path;
+use colored::*;
 
 mod crawler;
 mod dir_scanner;
@@ -12,13 +19,55 @@ mod dependency_manager;
 mod file_inclusion_scanner;
 mod sql_injection_scanner;
 mod animation;
+mod bypass_403;
+mod snapshot;
+mod rate_limiter;
+
+struct Config {
+    request_delay: Duration,
+}
+
+fn configure_rate_limit() -> Config {
+    loop {
+        let rps_input: String = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("Enter Requests Per Second (RPS)")
+            .default("5".into())
+            .interact_text()
+            .unwrap();
+
+        match rps_input.trim().parse::<u64>() {
+            Ok(mut rps) => {
+                if rps == 0 {
+                    println!("{}", "RPS cannot be 0. Please enter a valid number.".red());
+                    continue;
+                }
+                if rps > 100 {
+                    println!("{}", "RPS is capped at 100 to prevent overwhelming the target server.".yellow());
+                    rps = 100;
+                }
+                println!("Running at {} RPS.", rps);
+                if rps > 5 {
+                    println!("{}", "[WARNING] Rates above 5 RPS may get your IP blacklisted. Proceed with caution.".yellow());
+                }
+                let delay_ms = 1000 / rps;
+                return Config {
+                    request_delay: Duration::from_millis(delay_ms),
+                };
+            }
+            Err(_) => {
+                println!("{}", "Invalid input. Please enter a number.".red());
+            }
+        }
+    }
+}
 
 async fn crawl_target(
     url: Url,
     m: &MultiProgress,
     sty: &ProgressStyle,
+    rate_limiter: &Arc<rate_limiter::RateLimiter>,
 ) -> Result<(Vec<Url>, Vec<form::Form>), reqwest::Error> {
-    let mut crawler = crawler::Crawler::new(url.clone());
+    let mut crawler = crawler::Crawler::new(url.clone(), Arc::clone(rate_limiter));
     let pb_crawl = m.add(ProgressBar::new(100));
     pb_crawl.set_style(sty.clone());
 
@@ -35,14 +84,18 @@ async fn crawl_target(
     }
 }
 
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[derive(Parser, Debug, Clone)]
+#[command(author, version, about, long_about = "A comprehensive web vulnerability scanner.")]
 struct Cli {
     /// The target website URL to scan
     #[arg(short, long)]
     target: Option<String>,
 
-    /// The type of scanner to use
+    /// Path to a file containing a list of target URLs
+    #[arg(long)]
+    target_list: Option<String>,
+
+    /// The type of scanner to use (xss, dir, file, sql, bypass)
     #[arg(short, long)]
     scanner: Option<String>,
 
@@ -58,28 +111,67 @@ struct Cli {
 #[tokio::main]
 async fn main() {
     std::env::set_var("RUST_BACKTRACE", "full");
-    animation::run_animation();
+    animation::run_intro_animation();
     let cli = Cli::parse();
 
-    let target_url = match cli.target {
-        Some(target) => target,
-        None => match Input::with_theme(&ColorfulTheme::default())
-            .with_prompt("Enter the target website URL")
-            .interact_text()
-        {
-            Ok(target) => target,
-            Err(_) => {
-                eprintln!("Could not read target URL. Are you running in a non-interactive shell? Try specifying a target with the --target argument.");
-                return;
-            }
-        },
+    let config = configure_rate_limit();
+    let rate_limiter = Arc::new(rate_limiter::RateLimiter::new(config.request_delay));
+
+    let targets = if let Some(ref target_list) = cli.target_list {
+        read_lines(target_list).unwrap_or_else(|_| panic!("Failed to read target list file"))
+    } else {
+        vec![match cli.target.as_ref() {
+            Some(target) => target.clone(),
+            None => match Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Enter the target website URL")
+                .interact_text()
+            {
+                Ok(target) => target,
+                Err(_) => {
+                    eprintln!("Could not read target URL. Are you running in a non-interactive shell? Try specifying a target with the --target argument.");
+                    return;
+                }
+            },
+        }]
     };
 
-    let selection = match cli.scanner {
+    let concurrency = if cli.target_list.is_some() {
+        let num: usize = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("How many websites would you like to run through at a time?")
+            .interact_text()
+            .unwrap_or(1);
+        println!("{}", "[WARNING] Concurrent scans can multiply your RPS and may get your IP blacklisted. Proceed with caution.".yellow());
+        num
+    } else {
+        1
+    };
+
+    let semaphore = Arc::new(Semaphore::new(concurrency));
+    let mut tasks = vec![];
+
+    for target_url in targets {
+        let cli = Arc::new(cli.clone());
+        let rate_limiter = Arc::clone(&rate_limiter);
+        let semaphore = Arc::clone(&semaphore);
+
+        tasks.push(tokio::spawn(async move {
+            let _permit = semaphore.acquire().await.unwrap();
+            run_scan(&cli, &rate_limiter, &target_url).await;
+        }));
+    }
+
+    for task in tasks {
+        task.await.unwrap();
+    }
+}
+
+async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, target_url: &str) {
+    let selection = match &cli.scanner {
         Some(scanner) if scanner.to_lowercase() == "xss" => 0,
         Some(scanner) if scanner.to_lowercase() == "dir" => 1,
         Some(scanner) if scanner.to_lowercase() == "file" => 2,
         Some(scanner) if scanner.to_lowercase() == "sql" => 3,
+        Some(scanner) if scanner.to_lowercase() == "bypass" || scanner == "403" => 4,
         None => match Select::with_theme(&ColorfulTheme::default())
             .with_prompt("Choose an option")
             .items(&[
@@ -87,6 +179,7 @@ async fn main() {
                 "Open Directory",
                 "File Inclusion",
                 "SQL Injection",
+                "403/401 Bypass",
             ])
             .interact()
         {
@@ -97,7 +190,7 @@ async fn main() {
             }
         },
         _ => {
-            eprintln!("Invalid scanner type provided.");
+            eprintln!("Invalid scanner type provided. Available options: xss, dir, file, sql, bypass/403");
             return;
         }
     };
@@ -121,45 +214,30 @@ async fn main() {
         }
     };
 
+    let reporter = Arc::new(reporter::Reporter::new(url.clone()));
+
     if selection == 0 {
-        let (found_urls, found_forms) = match crawl_target(url.clone(), &m, &sty).await {
+        let (found_urls, found_forms) = match crawl_target(url.clone(), &m, &sty, &rate_limiter).await {
             Ok((urls, forms)) => (urls, forms),
             Err(_) => return,
         };
 
-        let scanner = xss::XssScanner::new(found_urls.clone(), found_forms.clone());
+        let scanner = xss::XssScanner::new(found_urls.clone(), found_forms.clone(), &reporter, Arc::clone(rate_limiter));
         let pb_scan = m.add(ProgressBar::new(
             (found_urls.len() * scanner.payloads_count()
                 + found_forms.len() * scanner.payloads_count()) as u64,
         ));
         pb_scan.set_style(sty.clone());
 
-        match scanner.scan(&pb_scan).await {
-            Ok(vulnerabilities) => {
-                pb_scan.finish_with_message("Scanning complete");
-                if vulnerabilities.is_empty() {
-                    println!("No XSS vulnerabilities found.");
-                } else {
-                    println!("Found {} XSS vulnerabilities:", vulnerabilities.len());
-                    let reporter = reporter::Reporter::new();
-                    if let Err(e) = reporter.report(&vulnerabilities, &url) {
-                        eprintln!("Error writing report: {}", e);
-                    } else {
-                        println!(
-                            "Report saved to {}/XSS-output.md",
-                            url.domain().unwrap_or("").replace(".", "_")
-                        );
-                    }
-                }
-            }
-            Err(e) => {
-                pb_scan.finish_with_message(format!("Scanning failed: {}", e));
-                eprintln!("Error scanning for XSS: {}", e);
-            }
+        if let Err(e) = scanner.scan(&pb_scan).await {
+            pb_scan.finish_with_message(format!("Scanning failed: {}", e));
+            eprintln!("Error scanning for XSS: {}", e);
+        } else {
+            pb_scan.finish_with_message("Scanning complete");
         }
     } else if selection == 1 {
         if cli.force_install || !dependency_manager::is_feroxbuster_installed() {
-            let confirm = if cli.force_install {
+            let confirm = if cli.force_install || cli.scanner.is_some() {
                 0
             } else {
                 Select::with_theme(&ColorfulTheme::default())
@@ -186,34 +264,16 @@ async fn main() {
 
         let pb_dir = m.add(ProgressBar::new_spinner());
         pb_dir.set_style(sty.clone());
-        let dir_scanner = dir_scanner::DirScanner::new(url.clone(), &pb_dir, cli.wordlist.clone());
+        let dir_scanner = dir_scanner::DirScanner::new(url.clone(), &pb_dir, cli.wordlist.clone(), &reporter);
 
-        match dir_scanner.scan().await {
-            Ok(found_dirs) => {
-                pb_dir.finish_with_message("Directory scan complete");
-                if found_dirs.is_empty() {
-                    println!("No open directories found.");
-                } else {
-                    println!("Found {} open directories:", found_dirs.len());
-                    let reporter = reporter::Reporter::new();
-                    let wordlist = cli.wordlist.clone().unwrap_or("default_wordlist.txt".to_string());
-                    if let Err(e) = reporter.report_dirs(&found_dirs, &url, &wordlist) {
-                        eprintln!("Error writing report: {}", e);
-                    } else {
-                        println!(
-                            "Report saved to {}/Open-Directories-output.md",
-                            url.domain().unwrap_or("").replace(".", "_")
-                        );
-                    }
-                }
-            }
-            Err(e) => {
-                pb_dir.finish_with_message(format!("Directory scan failed: {}", e));
-                eprintln!("Error scanning for directories: {}", e);
-            }
+        if let Err(e) = dir_scanner.scan().await {
+            pb_dir.finish_with_message(format!("Directory scan failed: {}", e));
+            eprintln!("Error scanning for directories: {}", e);
+        } else {
+            pb_dir.finish_with_message("Directory scan complete");
         }
     } else if selection == 2 {
-        let (found_urls, found_forms) = match crawl_target(url.clone(), &m, &sty).await {
+        let (found_urls, found_forms) = match crawl_target(url.clone(), &m, &sty, &rate_limiter).await {
             Ok((urls, forms)) => (urls, forms),
             Err(_) => return,
         };
@@ -221,6 +281,8 @@ async fn main() {
         let scanner = file_inclusion_scanner::FileInclusionScanner::new(
             found_urls.clone(),
             found_forms.clone(),
+            &reporter,
+            Arc::clone(rate_limiter),
         );
         let pb_scan = m.add(ProgressBar::new(
             (found_urls.len() * scanner.payloads_count()
@@ -228,34 +290,14 @@ async fn main() {
         ));
         pb_scan.set_style(sty.clone());
 
-        match scanner.scan(&pb_scan).await {
-            Ok(vulnerabilities) => {
-                pb_scan.finish_with_message("Scanning complete");
-                if vulnerabilities.is_empty() {
-                    println!("No file inclusion vulnerabilities found.");
-                } else {
-                    println!(
-                        "Found {} file inclusion vulnerabilities:",
-                        vulnerabilities.len()
-                    );
-                    let reporter = reporter::Reporter::new();
-                    if let Err(e) = reporter.report_file_inclusion(&vulnerabilities, &url) {
-                        eprintln!("Error writing report: {}", e);
-                    } else {
-                        println!(
-                            "Report saved to {}/File-Inclusion-output.txt",
-                            url.domain().unwrap_or("").replace(".", "_")
-                        );
-                    }
-                }
-            }
-            Err(e) => {
-                pb_scan.finish_with_message(format!("Scanning failed: {}", e));
-                eprintln!("Error scanning for file inclusion: {}", e);
-            }
+        if let Err(e) = scanner.scan(&pb_scan).await {
+            pb_scan.finish_with_message(format!("Scanning failed: {}", e));
+            eprintln!("Error scanning for file inclusion: {}", e);
+        } else {
+            pb_scan.finish_with_message("Scanning complete");
         }
     } else if selection == 3 {
-        let (found_urls, found_forms) = match crawl_target(url.clone(), &m, &sty).await {
+        let (found_urls, found_forms) = match crawl_target(url.clone(), &m, &sty, &rate_limiter).await {
             Ok((urls, forms)) => (urls, forms),
             Err(_) => return,
         };
@@ -263,6 +305,8 @@ async fn main() {
         let scanner = sql_injection_scanner::SqlInjectionScanner::new(
             found_urls.clone(),
             found_forms.clone(),
+            &reporter,
+            Arc::clone(rate_limiter),
         );
         let pb_scan = m.add(ProgressBar::new(
             (found_urls.len() * scanner.payloads_count()
@@ -270,31 +314,28 @@ async fn main() {
         ));
         pb_scan.set_style(sty.clone());
 
-        match scanner.scan(&pb_scan).await {
-            Ok(vulnerabilities) => {
-                pb_scan.finish_with_message("Scanning complete");
-                if vulnerabilities.is_empty() {
-                    println!("No SQL injection vulnerabilities found.");
-                } else {
-                    println!(
-                        "Found {} SQL injection vulnerabilities:",
-                        vulnerabilities.len()
-                    );
-                    let reporter = reporter::Reporter::new();
-                    if let Err(e) = reporter.report_sql_injection(&vulnerabilities, &url) {
-                        eprintln!("Error writing report: {}", e);
-                    } else {
-                        println!(
-                            "Report saved to {}/Sql-Injection-output.txt",
-                            url.domain().unwrap_or("").replace(".", "_")
-                        );
-                    }
-                }
-            }
-            Err(e) => {
-                pb_scan.finish_with_message(format!("Scanning failed: {}", e));
-                eprintln!("Error scanning for SQL injection: {}", e);
-            }
+        if let Err(e) = scanner.scan(&pb_scan).await {
+            pb_scan.finish_with_message(format!("Scanning failed: {}", e));
+            eprintln!("Error scanning for SQL injection: {}", e);
+        } else {
+            pb_scan.finish_with_message("Scanning complete");
+        }
+    } else if selection == 4 {
+        let pb_bypass = m.add(ProgressBar::new(100));
+        pb_bypass.set_style(sty.clone());
+        let bypass_scanner = bypass_403::BypassScanner::new(url.clone(), &pb_bypass, &reporter, Arc::clone(rate_limiter));
+
+        if let Err(e) = bypass_scanner.scan().await {
+            pb_bypass.finish_with_message(format!("403 bypass scan failed: {}", e));
+            eprintln!("Error scanning for 403 bypasses: {}", e);
+        } else {
+            pb_bypass.finish_with_message("403 bypass scan complete");
         }
     }
+}
+
+fn read_lines<P>(filename: P) -> io::Result<Vec<String>>
+where P: AsRef<Path>, {
+    let file = File::open(filename)?;
+    io::BufReader::new(file).lines().collect()
 }

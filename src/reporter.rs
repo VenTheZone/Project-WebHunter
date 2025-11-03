@@ -1,159 +1,143 @@
+use crate::bypass_403::BypassBypass;
 use crate::file_inclusion_scanner::FileInclusionVulnerability;
+use crate::snapshot::get_snapshot_filename_base;
 use crate::sql_injection_scanner::SqlInjectionVulnerability;
-use crate::xss::Vulnerability;
-use std::fs;
-use std::io::Write;
-use url::Url;
+use crate::xss;
 use chrono::Local;
+use std::collections::HashMap;
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
+use std::sync::Mutex;
+use url::Url;
 
-pub struct Reporter;
+pub struct Reporter {
+    target_url: Url,
+    report_files: Mutex<HashMap<String, File>>,
+}
 
 impl Reporter {
-    pub fn new() -> Self {
-        Self
+    pub fn new(target_url: Url) -> Self {
+        Self {
+            target_url,
+            report_files: Mutex::new(HashMap::new()),
+        }
     }
 
-    pub fn report(&self, vulnerabilities: &[Vulnerability], target_url: &Url) -> std::io::Result<()> {
-        let domain = target_url.domain().unwrap_or("unknown_domain").replace(".", "_");
+    fn get_report_file(&self, file_name: &str) -> std::io::Result<File> {
+        let mut files = self.report_files.lock().unwrap();
+        if let Some(file) = files.get(file_name) {
+            return Ok(file.try_clone()?);
+        }
+
+        let domain = self
+            .target_url
+            .domain()
+            .unwrap_or("unknown_domain")
+            .replace(".", "_");
         fs::create_dir_all(&domain)?;
+        let file_path = format!("{}/{}", domain, file_name);
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&file_path)?;
 
-        let file_path = format!("{}/XSS-output.md", domain);
-        let mut file = fs::File::create(file_path)?;
-
-        writeln!(file, "# WebHunter XSS Scan Report for {}", target_url)?;
-        writeln!(file, "**Scan completed on:** {}", Local::now())?;
+        writeln!(file, "# WebHunter Scan Report for {}", self.target_url)?;
+        writeln!(file, "**Scan started on:** {}", Local::now())?;
         writeln!(file, "---")?;
 
-        if vulnerabilities.is_empty() {
-            writeln!(file, "## No XSS vulnerabilities found.")?;
-        } else {
-            for vuln in vulnerabilities {
-                writeln!(file, "## Vulnerability Found:")?;
-                writeln!(file, "- **URL:** {}", vuln.url)?;
-                writeln!(file, "- **Type:** {}", vuln.vuln_type)?;
-                writeln!(file, "- **Severity:** {}", vuln.severity)?;
-                writeln!(file, "- **Parameter:** {}", vuln.parameter)?;
-                writeln!(file, "- **Payload:** `{}`", vuln.payload)?;
-                writeln!(file, "---")?;
-            }
-        }
-        Ok(())
+        files.insert(file_name.to_string(), file.try_clone()?);
+        Ok(file)
     }
 
-    pub fn report_sql_injection(
-        &self,
-        vulnerabilities: &[SqlInjectionVulnerability],
-        target_url: &Url,
-    ) -> std::io::Result<()> {
-        let domain = target_url.domain().unwrap_or("unknown_domain").replace(".", "_");
-        fs::create_dir_all(&domain)?;
-
-        let file_path = format!("{}/Sql-Injection-output.md", domain);
-        let mut file = fs::File::create(file_path)?;
-
-        writeln!(file, "# WebHunter SQL Injection Scan Report for {}", target_url)?;
-        writeln!(file, "**Scan completed on:** {}", Local::now())?;
-        writeln!(file, "---")?;
-
-        if vulnerabilities.is_empty() {
-            writeln!(file, "## No SQL injection vulnerabilities found.")?;
-        } else {
-            writeln!(file, "## Summary")?;
-            writeln!(file, "WebHunter discovered one or more SQL injection vulnerabilities. This could allow an attacker to execute arbitrary SQL queries, bypass authentication, or exfiltrate sensitive data from the database.")?;
-            writeln!(file, "")?;
-            writeln!(file, "## Description")?;
-            writeln!(file, "SQL Injection is a web security vulnerability that allows an attacker to interfere with the queries that an application makes to its database. It generally allows an attacker to view data that they are not normally able to retrieve.")?;
-            writeln!(file, "")?;
-            writeln!(file, "## Impact")?;
-            writeln!(file, "Successful exploitation of an SQL Injection vulnerability can result in unauthorized access to sensitive data, such as passwords, credit card details, or personal user information. It can also be used to modify or delete this data, causing persistent changes to the application's content or behavior.")?;
-            writeln!(file, "")?;
-            writeln!(file, "## Remediation")?;
-            writeln!(file, "The most effective way to prevent SQL injection is to use parameterized queries (also known as prepared statements). This practice ensures that user-supplied input is treated as data and not as part of the SQL command.")?;
-            writeln!(file, "---")?;
-            writeln!(file, "## Findings")?;
-            writeln!(file, "| URL | Parameter | Type | Payload | Severity |")?;
-            writeln!(file, "|---|---|---|---|---|")?;
-            for vuln in vulnerabilities {
-                writeln!(
-                    file,
-                    "| [{}]({}) | {} | {} | `{}` | High |",
-                    vuln.url, vuln.url, vuln.parameter, vuln.vuln_type, vuln.payload
-                )?;
-            }
-        }
-        Ok(())
+    pub fn report_xss(&self, vuln: &xss::Vulnerability) {
+        let mut file = self.get_report_file("XSS-output.md").unwrap();
+        writeln!(file, "## XSS Vulnerability Found:").unwrap();
+        writeln!(file, "- **Proof of Concept:** [{}]({})", vuln.proof_of_concept, vuln.proof_of_concept).unwrap();
+        writeln!(file, "- **Method:** {}", vuln.method).unwrap();
+        writeln!(file, "- **Type:** {}", vuln.vuln_type).unwrap();
+        writeln!(file, "- **Severity:** {}", vuln.severity).unwrap();
+        writeln!(file, "- **Parameter:** {}", vuln.parameter).unwrap();
+        writeln!(file, "- **Payload:** `{}`", vuln.payload).unwrap();
+        writeln!(file, "---").unwrap();
     }
 
-    pub fn report_file_inclusion(
-        &self,
-        vulnerabilities: &[FileInclusionVulnerability],
-        target_url: &Url,
-    ) -> std::io::Result<()> {
-        let domain = target_url.domain().unwrap_or("unknown_domain").replace(".", "_");
-        fs::create_dir_all(&domain)?;
-
-        let file_path = format!("{}/File-Inclusion-output.txt", domain);
-        let mut file = fs::File::create(file_path)?;
-
-        writeln!(file, "WebHunter File Inclusion Scan Report for {}", target_url)?;
-        writeln!(file, "Scan completed on: {}", Local::now())?;
-        writeln!(file, "--------------------------------------------------")?;
-
-        if vulnerabilities.is_empty() {
-            writeln!(file, "No file inclusion vulnerabilities found.")?;
-        } else {
-            for vuln in vulnerabilities {
-                writeln!(file, "Vulnerability Found:")?;
-                writeln!(file, "  URL: {}", vuln.url)?;
-                writeln!(file, "  Type: {}", vuln.vuln_type)?;
-                writeln!(file, "  Parameter: {}", vuln.parameter)?;
-                writeln!(file, "  Payload: {}", vuln.payload)?;
-                writeln!(file, "--------------------------------------------------")?;
-            }
-        }
-        Ok(())
+    pub fn report_sql_injection(&self, vuln: &SqlInjectionVulnerability) {
+        let mut file = self.get_report_file("Sql-Injection-output.md").unwrap();
+        writeln!(file, "## SQL Injection Vulnerability Found:").unwrap();
+        writeln!(file, "| URL | Parameter | Type | Payload | Severity |").unwrap();
+        writeln!(file, "|---|---|---|---|---|").unwrap();
+        writeln!(
+            file,
+            "| [{}]({}) | {} | {} | `{}` | High |",
+            vuln.url, vuln.url, vuln.parameter, vuln.vuln_type, vuln.payload
+        )
+        .unwrap();
+        writeln!(file, "---").unwrap();
     }
 
-    pub fn report_dirs(&self, found_dirs: &[(Url, u16, u64)], target_url: &Url, wordlist: &str) -> std::io::Result<()> {
-        let domain = target_url.domain().unwrap_or("unknown_domain").replace(".", "_");
-        fs::create_dir_all(&domain)?;
+    pub fn report_file_inclusion(&self, vuln: &FileInclusionVulnerability) {
+        let mut file = self.get_report_file("File-Inclusion-output.txt").unwrap();
+        writeln!(file, "Vulnerability Found:").unwrap();
+        writeln!(file, "  URL: {}", vuln.url).unwrap();
+        writeln!(file, "  Type: {}", vuln.vuln_type).unwrap();
+        writeln!(file, "  Parameter: {}", vuln.parameter).unwrap();
+        writeln!(file, "  Payload: {}", vuln.payload).unwrap();
+        writeln!(file, "--------------------------------------------------").unwrap();
+    }
 
-        let file_path = format!("{}/Open-Directories-output.md", domain);
-        let mut file = fs::File::create(file_path)?;
+    pub fn report_403_bypass(&self, bypass: &BypassBypass) {
+        // MD report
+        let mut md_file = self.get_report_file("403-Bypass-output.md").unwrap();
+        writeln!(md_file, "## 403 Bypass Found:").unwrap();
+        let filename_base =
+            get_snapshot_filename_base(&bypass.bypass_url, &bypass.method, &bypass.technique);
+        let html_snapshot = format!("./snapshots/{}.html", filename_base);
+        let png_snapshot = format!("./snapshots/{}.png", filename_base);
 
-        writeln!(file, "# WebHunter Open Directory Scan Report for {}", target_url)?;
-        writeln!(file, "**Scan completed on:** {}", Local::now())?;
-        writeln!(file, "---")?;
+        writeln!(
+            md_file,
+            "| Original URL | Bypass URL | Method | Technique | Headers | Snapshots | Severity |"
+        )
+        .unwrap();
+        writeln!(md_file, "|---|---|---|---|---|---|---|").unwrap();
+        writeln!(
+            md_file,
+            "| [{}]({}) | [{}]({}) | {} | {} | `{}` | [HTML]({}) / [PNG]({}) | {} |",
+            bypass.url,
+            bypass.url,
+            bypass.bypass_url,
+            bypass.bypass_url,
+            bypass.method,
+            bypass.technique,
+            bypass.headers,
+            html_snapshot,
+            png_snapshot,
+            bypass.severity
+        )
+        .unwrap();
+        writeln!(md_file, "---").unwrap();
 
-        if found_dirs.is_empty() {
-            writeln!(file, "## No open directories found.")?;
-        } else {
-            writeln!(file, "## Summary")?;
-            writeln!(file, "WebHunter discovered one or more open directories on the target server. This could lead to the exposure of sensitive information.")?;
-            writeln!(file, "")?;
-            writeln!(file, "## Scan Details")?;
-            writeln!(file, "- **Tool Used:** feroxbuster")?;
-            writeln!(file, "- **Command:** `feroxbuster -u {} -w {} --json --silent`", target_url, wordlist)?;
-            writeln!(file, "")?;
-            writeln!(file, "## Description")?;
-            writeln!(file, "Open directories, also known as directory listing, is a feature that, when enabled, lists the contents of a directory when no index file is present. This can expose sensitive information to attackers, such as configuration files, source code, or other confidential data.")?;
-            writeln!(file, "")?;
-            writeln!(file, "## Impact")?;
-            writeln!(file, "Exposure of sensitive data and information leakage that could aid further attacks.")?;
-            writeln!(file, "")?;
-            writeln!(file, "## Steps to Reproduce")?;
-            writeln!(file, "The following URLs can be accessed with a web browser to view the directory contents:")?;
-            writeln!(file, "")?;
-            writeln!(file, "## Remediation")?;
-            writeln!(file, "Disable directory listing on your web server. For example, on an Apache server, you can add `Options -Indexes` to your `.htaccess` file or server configuration.")?;
-            writeln!(file, "---")?;
-            writeln!(file, "## Findings")?;
-            writeln!(file, "| URL | Status | Content-Length | Severity |")?;
-            writeln!(file, "|---|---|---|---|")?;
-            for (url, status, content_length) in found_dirs {
-                writeln!(file, "| [{}]({}) | {} | {} bytes | Medium |", url, url, status, content_length)?;
-            }
-        }
-        Ok(())
+        // TXT report
+        let mut txt_file = self.get_report_file("403-Bypass-output.txt").unwrap();
+        writeln!(
+            txt_file,
+            "Bypassed: {} with method {} and technique {}",
+            bypass.bypass_url, bypass.method, bypass.technique
+        )
+        .unwrap();
+    }
+
+    pub fn report_directory(&self, url: &Url, status: u16, content_length: u64) {
+        let mut file = self.get_report_file("Open-Directories-output.md").unwrap();
+        writeln!(file, "## Open Directory Found:").unwrap();
+        writeln!(file, "| URL | Status | Content-Length | Severity |").unwrap();
+        writeln!(file, "|---|---|---|---|").unwrap();
+        writeln!(
+            file,
+            "| [{}]({}) | {} | {} bytes | Medium |",
+            url, url, status, content_length
+        )
+        .unwrap();
+        writeln!(file, "---").unwrap();
     }
 }
