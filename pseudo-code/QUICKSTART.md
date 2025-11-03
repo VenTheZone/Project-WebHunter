@@ -1,4 +1,4 @@
-# Quick Start Guide for WebHunter Pseudo-Code
+## Quick Start Guide for WebHunter Pseudo-Code
 
 Welcome to the WebHunter pseudo-code documentation! This guide will help you get started quickly.
 
@@ -203,4 +203,4 @@ After reading this guide:
 
 ---
 
-**Ready to dive in?** Start with `README.md` or jump straight to your topic of interest using `INDEX.md`!
+**Ready to dive in?** Start with `README.md` or jump straight to your topic of interest using `INDEX.md`!Ready to dive in?** Start with `README.md` or jump straight to your topic of interest using `INDEX.md`!
