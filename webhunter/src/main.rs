@@ -10,7 +10,9 @@ use std::time::Duration;
 use tokio::sync::Semaphore;
 use url::Url;
 
+mod access_control_scanner;
 mod animation;
+mod auth_bypass_scanner;
 mod bypass_403;
 mod crawler;
 mod csrf_scanner;
@@ -197,6 +199,8 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         Some(scanner) if scanner.to_lowercase() == "sql" => 3,
         Some(scanner) if scanner.to_lowercase() == "bypass" || scanner == "403" => 4,
         Some(scanner) if scanner.to_lowercase() == "csrf" => 5,
+        Some(scanner) if scanner.to_lowercase() == "auth" => 6,
+        Some(scanner) if scanner.to_lowercase() == "bac" => 7,
         None => match Select::with_theme(&ColorfulTheme::default())
             .with_prompt("Choose an option")
             .items(&[
@@ -206,6 +210,8 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
                 "SQL Injection",
                 "403/401 Bypass",
                 "CSRF",
+                "Authentication Bypass",
+                "Broken Access Control",
             ])
             .interact()
         {
@@ -465,9 +471,70 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         } else {
             println!("CSRF scan complete.");
         }
+    } else if selection == 6 {
+        let (_, found_forms) = match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+            Ok((urls, forms)) => (urls, forms),
+            Err(_) => return,
+        };
+
+        let scanner = auth_bypass_scanner::AuthBypassScanner::new(
+            found_forms.clone(),
+            &reporter,
+            Arc::clone(rate_limiter),
+        );
+
+        let total_checks = scanner.payloads_count();
+
+        if total_checks == 0 {
+            println!("No login forms found to test.");
+            m.clear().unwrap();
+            return;
+        }
+
+        println!("Starting Authentication Bypass scan...");
+        let pb = m.add(ProgressBar::new(total_checks as u64));
+        pb.set_style(sty.clone());
+
+        if let Err(e) = scanner.scan(&pb).await {
+            eprintln!("Error scanning for Auth Bypass: {}", e);
+        } else {
+            pb.finish_with_message("Auth Bypass scan complete.");
+        }
+    } else if selection == 7 {
+        // Broken Access Control Scanner
+        let (found_urls, _) = match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+            Ok((urls, forms)) => (urls, forms),
+            Err(_) => return,
+        };
+
+        let mut scanner = access_control_scanner::AccessControlScanner::new(
+            url.clone(),
+            found_urls.clone(),
+            &reporter,
+            Arc::clone(rate_limiter),
+        );
+
+        // Load sensitive paths
+        if let Ok(paths) = read_lines("webhunter/wordlists/access_control/sensitive_paths.txt") {
+            scanner.load_sensitive_paths(paths);
+        } else {
+            eprintln!("Warning: Could not load sensitive_paths.txt. Forced browsing check will be limited.");
+        }
+
+        println!("Starting Broken Access Control scan...");
+        // Estimate progress: sensitive paths + (discovered urls * 2 for IDOR/Method)
+        // This is rough estimate
+        let total_checks = 20 + (found_urls.len() * 2);
+        let pb = m.add(ProgressBar::new(total_checks as u64));
+        pb.set_style(sty.clone());
+
+        if let Err(e) = scanner.scan(&pb).await {
+            eprintln!("Error scanning for Access Control: {}", e);
+        } else {
+            pb.finish_with_message("Access Control scan complete.");
+        }
     }
 }
-
 fn read_lines<P>(filename: P) -> io::Result<Vec<String>>
 where
     P: AsRef<Path>,

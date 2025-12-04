@@ -12,6 +12,7 @@ use url::Url;
 pub struct Reporter {
     target_url: Url,
     report_files: Mutex<HashMap<String, File>>,
+    output_dir: Option<std::path::PathBuf>,
 }
 
 impl Reporter {
@@ -19,7 +20,13 @@ impl Reporter {
         Self {
             target_url,
             report_files: Mutex::new(HashMap::new()),
+            output_dir: None,
         }
+    }
+
+    pub fn with_output_dir(mut self, path: std::path::PathBuf) -> Self {
+        self.output_dir = Some(path);
+        self
     }
 
     fn get_report_file(&self, file_name: &str) -> std::io::Result<File> {
@@ -28,13 +35,20 @@ impl Reporter {
             return file.try_clone();
         }
 
-        let domain = self
-            .target_url
-            .domain()
-            .unwrap_or("unknown_domain")
-            .replace(".", "_");
-        fs::create_dir_all(&domain)?;
-        let file_path = format!("{}/{}", domain, file_name);
+        let host = self.target_url.host_str().unwrap_or("unknown_host");
+        let port = self.target_url.port_or_known_default().unwrap_or(80);
+        let dir_name = format!("{}_{}", host.replace('.', "_"), port);
+
+        let dir_path = if let Some(ref base) = self.output_dir {
+            base.join(&dir_name)
+        } else {
+            std::path::PathBuf::from(&dir_name)
+        };
+
+        fs::create_dir_all(&dir_path)?;
+        let file_path = dir_path.join(file_name);
+        println!("Writing report to: {:?}", file_path);
+
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -48,8 +62,9 @@ impl Reporter {
         Ok(file)
     }
 
-    pub fn report_xss(&self, vuln: &xss::Vulnerability) {
+    pub fn report_xss(&self, vuln: &crate::xss::Vulnerability) {
         let mut file = self.get_report_file("XSS-output.md").unwrap();
+
         writeln!(file, "## XSS Vulnerability Found:").unwrap();
         writeln!(
             file,
@@ -138,6 +153,23 @@ impl Reporter {
         .unwrap();
         writeln!(file, "---").unwrap();
     }
+    pub fn report_dom_xss(&self, vuln: &crate::dom_xss_scanner::DomXssVulnerability) {
+        let mut file = self.get_report_file("DOM-XSS-output.md").unwrap();
+
+        writeln!(file, "## DOM-based XSS Vulnerability Found:").unwrap();
+        writeln!(file, "| URL | Source | Sink | Line | Severity |").unwrap();
+        writeln!(file, "|---|---|---|---|---|").unwrap();
+        writeln!(
+            file,
+            "| [{}]({}) | `{}` | `{}` | {} | {} |",
+            vuln.url, vuln.url, vuln.source, vuln.sink, vuln.line_number, vuln.severity
+        )
+        .unwrap();
+
+        writeln!(file, "\n### Vulnerable Code:").unwrap();
+        writeln!(file, "```javascript\n{}\n```", vuln.code_snippet).unwrap();
+        writeln!(file, "---").unwrap();
+    }
 
     pub fn report_csrf(&self, vuln: &crate::csrf_scanner::CsrfVulnerability) {
         let mut file = self.get_report_file("CSRF-output.md").unwrap();
@@ -166,25 +198,33 @@ impl Reporter {
         writeln!(file, "---").unwrap();
     }
 
-    pub fn report_dom_xss(&self, vuln: &crate::dom_xss_scanner::DomXssVulnerability) {
-        let mut file = self.get_report_file("DOM-XSS-output.md").unwrap();
+    pub fn report_access_control(
+        &self,
+        vuln: &crate::access_control_scanner::AccessControlVulnerability,
+    ) {
+        if let Ok(mut file) = self.get_report_file("Access-Control-output.md") {
+            let _ = writeln!(file, "## Access Control Vulnerability Found");
+            let _ = writeln!(file, "- **URL:** {}", vuln.url);
+            let _ = writeln!(file, "- **Type:** {}", vuln.vuln_type);
+            let _ = writeln!(file, "- **Severity:** {}", vuln.severity);
+            let _ = writeln!(file, "- **Payload:** `{}`", vuln.payload);
+            let _ = writeln!(file, "- **Description:** {}", vuln.description);
+            let _ = writeln!(file, "---");
+        }
+    }
 
-        writeln!(file, "## DOM-based XSS Vulnerability Found:").unwrap();
-        writeln!(file, "| URL | Source | Sink | Line | Severity |").unwrap();
-        writeln!(file, "|---|---|---|---|---|").unwrap();
-        writeln!(
-            file,
-            "| [{}]({}) | {} | {} | {} | {} |",
-            vuln.url, vuln.url, vuln.source, vuln.sink, vuln.line_number, vuln.severity
-        )
-        .unwrap();
-
-        writeln!(file, "\n### Vulnerable Code:").unwrap();
-        writeln!(file, "```javascript\n{}\n```", vuln.code_snippet).unwrap();
-        writeln!(file, "---").unwrap();
+    pub fn report_auth_bypass(&self, vuln: &crate::auth_bypass_scanner::AuthBypassVulnerability) {
+        if let Ok(mut file) = self.get_report_file("auth_bypass_report.md") {
+            let _ = writeln!(file, "## Authentication Bypass Found");
+            let _ = writeln!(file, "- **URL:** {}", vuln.url);
+            let _ = writeln!(file, "- **Form Action:** {}", vuln.form_action);
+            let _ = writeln!(file, "- **Type:** {}", vuln.vuln_type);
+            let _ = writeln!(file, "- **Payload:** `{}`", vuln.payload);
+            let _ = writeln!(file, "- **Description:** {}", vuln.description);
+            let _ = writeln!(file, "---");
+        }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,15 +234,9 @@ mod tests {
     fn create_test_reporter() -> (Reporter, TempDir) {
         let temp_dir = TempDir::new().unwrap();
 
-        // Change to temp directory for testing
-        // NOTE: This affects the current working directory for the process
-        // Tests may interfere with each other if run in parallel
-        std::env::set_current_dir(temp_dir.path()).unwrap();
-
         let url = Url::parse("https://example.com").unwrap();
-        let reporter = Reporter::new(url);
+        let reporter = Reporter::new(url).with_output_dir(temp_dir.path().to_path_buf());
 
-        // Return both so temp_dir doesn't get dropped
         (reporter, temp_dir)
     }
 
@@ -217,17 +251,17 @@ mod tests {
 
     #[test]
     fn test_report_xss() {
-        let (reporter, _temp_dir) = create_test_reporter();
+        let (reporter, temp_dir) = create_test_reporter();
 
         let vuln = crate::xss::Vulnerability {
             proof_of_concept: Url::parse("https://example.com/page?q=<script>alert(1)</script>")
                 .unwrap(),
             parameter: "q".to_string(),
             payload: "<script>alert(1)</script>".to_string(),
-            vuln_type: "Reflected".to_string(),
+            vuln_type: "Reflected XSS".to_string(),
             severity: "Medium".to_string(),
             method: "GET".to_string(),
-            technique: "basic".to_string(),
+            technique: "Basic".to_string(),
         };
 
         reporter.report_xss(&vuln);
@@ -235,11 +269,11 @@ mod tests {
         // Force flush by dropping reporter
         std::mem::drop(reporter);
 
-        // Verify file was created
-        let report_path = "example_com/XSS-output.md";
+        let report_path = temp_dir.path().join("example_com_443/XSS-output.md");
         assert!(
-            fs::metadata(report_path).is_ok(),
-            "XSS report file should exist"
+            report_path.exists(),
+            "XSS report file should exist at {:?}",
+            report_path
         );
 
         // Verify content
@@ -251,10 +285,10 @@ mod tests {
 
     #[test]
     fn test_report_sql_injection() {
-        let (reporter, _temp_dir) = create_test_reporter();
+        let (reporter, temp_dir) = create_test_reporter();
 
         let vuln = crate::sql_injection_scanner::SqlInjectionVulnerability {
-            url: Url::parse("https://example.com/user?id=1'").unwrap(),
+            url: Url::parse("https://example.com/page?id=1'").unwrap(),
             parameter: "id".to_string(),
             payload: "1'".to_string(),
             vuln_type: "Error-based".to_string(),
@@ -262,10 +296,16 @@ mod tests {
 
         reporter.report_sql_injection(&vuln);
 
-        let report_path = "example_com/Sql-Injection-output.md";
+        // Force flush by dropping reporter
+        std::mem::drop(reporter);
+
+        let report_path = temp_dir
+            .path()
+            .join("example_com_443/Sql-Injection-output.md");
         assert!(
-            fs::metadata(report_path).is_ok(),
-            "SQL injection report file should exist"
+            report_path.exists(),
+            "SQL injection report file should exist at {:?}",
+            report_path
         );
 
         let content = fs::read_to_string(report_path).unwrap();
@@ -276,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_report_file_inclusion() {
-        let (reporter, _temp_dir) = create_test_reporter();
+        let (reporter, temp_dir) = create_test_reporter();
 
         let vuln = crate::file_inclusion_scanner::FileInclusionVulnerability {
             url: Url::parse("https://example.com/page?file=../../../etc/passwd").unwrap(),
@@ -290,10 +330,13 @@ mod tests {
         // Force flush by dropping reporter
         std::mem::drop(reporter);
 
-        let report_path = "example_com/File-Inclusion-output.txt";
+        let report_path = temp_dir
+            .path()
+            .join("example_com_443/File-Inclusion-output.txt");
         assert!(
-            fs::metadata(report_path).is_ok(),
-            "File inclusion report file should exist"
+            report_path.exists(),
+            "File inclusion report file should exist at {:?}",
+            report_path
         );
 
         let content = fs::read_to_string(report_path).unwrap();
@@ -304,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_report_directory() {
-        let (reporter, _temp_dir) = create_test_reporter();
+        let (reporter, temp_dir) = create_test_reporter();
 
         let url = Url::parse("https://example.com/admin/").unwrap();
         reporter.report_directory(&url, 200, 1024);
@@ -312,10 +355,13 @@ mod tests {
         // Force flush by dropping reporter
         std::mem::drop(reporter);
 
-        let report_path = "example_com/Open-Directories-output.md";
+        let report_path = temp_dir
+            .path()
+            .join("example_com_443/Open-Directories-output.md");
         assert!(
-            fs::metadata(report_path).is_ok(),
-            "Directory report file should exist"
+            report_path.exists(),
+            "Directory report file should exist at {:?}",
+            report_path
         );
 
         let content = fs::read_to_string(report_path).unwrap();

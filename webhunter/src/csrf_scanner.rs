@@ -196,10 +196,12 @@ mod tests {
             FormInput {
                 name: "username".to_string(),
                 value: "test".to_string(),
+                input_type: "text".to_string(),
             },
             FormInput {
                 name: "csrf_token".to_string(),
                 value: "abc123xyz".to_string(),
+                input_type: "hidden".to_string(),
             },
         ]);
 
@@ -212,6 +214,7 @@ mod tests {
         let form = create_test_form(vec![FormInput {
             name: "authenticity_token".to_string(),
             value: "secure_token_123".to_string(),
+            input_type: "hidden".to_string(),
         }]);
 
         assert!(
@@ -226,6 +229,7 @@ mod tests {
         let form = create_test_form(vec![FormInput {
             name: "CSRF_TOKEN".to_string(),
             value: "token123".to_string(),
+            input_type: "hidden".to_string(),
         }]);
 
         assert!(
@@ -240,6 +244,7 @@ mod tests {
         let form = create_test_form(vec![FormInput {
             name: "csrf_token".to_string(),
             value: "".to_string(), // Empty value - not a valid token
+            input_type: "hidden".to_string(),
         }]);
 
         assert!(
@@ -255,10 +260,12 @@ mod tests {
             FormInput {
                 name: "username".to_string(),
                 value: "test".to_string(),
+                input_type: "text".to_string(),
             },
             FormInput {
                 name: "password".to_string(),
                 value: "secret".to_string(),
+                input_type: "password".to_string(),
             },
         ]);
 
@@ -275,10 +282,12 @@ mod tests {
             FormInput {
                 name: "email".to_string(),
                 value: "victim@example.com".to_string(),
+                input_type: "email".to_string(),
             },
             FormInput {
                 name: "amount".to_string(),
                 value: "1000".to_string(),
+                input_type: "number".to_string(),
             },
         ]);
 
@@ -334,6 +343,7 @@ mod tests {
         let form = create_test_form(vec![FormInput {
             name: "text".to_string(),
             value: "value with \"quotes\"".to_string(),
+            input_type: "text".to_string(),
         }]);
 
         let poc = scanner.generate_poc(&form);

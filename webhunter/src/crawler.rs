@@ -149,7 +149,16 @@ impl Crawler {
                                 .attr("value")
                                 .unwrap_or("")
                                 .to_string();
-                            inputs.push(FormInput { name, value });
+                            let input_type = input_element
+                                .value()
+                                .attr("type")
+                                .unwrap_or("text")
+                                .to_string();
+                            inputs.push(FormInput {
+                                name,
+                                value,
+                                input_type,
+                            });
                         }
                         self.forms.push(Form {
                             action,

@@ -4,6 +4,7 @@ use url::Url;
 pub struct FormInput {
     pub name: String,
     pub value: String,
+    pub input_type: String,
 }
 
 #[derive(Debug, Clone)]
@@ -23,6 +24,7 @@ mod tests {
         let input = FormInput {
             name: "username".to_string(),
             value: "test_user".to_string(),
+            input_type: "text".to_string(),
         };
 
         assert_eq!(input.name, "username");
@@ -36,10 +38,12 @@ mod tests {
             FormInput {
                 name: "email".to_string(),
                 value: "".to_string(),
+                input_type: "email".to_string(),
             },
             FormInput {
                 name: "password".to_string(),
                 value: "".to_string(),
+                input_type: "password".to_string(),
             },
         ];
 
