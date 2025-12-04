@@ -25,7 +25,7 @@ impl Reporter {
     fn get_report_file(&self, file_name: &str) -> std::io::Result<File> {
         let mut files = self.report_files.lock().unwrap();
         if let Some(file) = files.get(file_name) {
-            return Ok(file.try_clone()?);
+            return file.try_clone();
         }
 
         let domain = self
@@ -51,7 +51,12 @@ impl Reporter {
     pub fn report_xss(&self, vuln: &xss::Vulnerability) {
         let mut file = self.get_report_file("XSS-output.md").unwrap();
         writeln!(file, "## XSS Vulnerability Found:").unwrap();
-        writeln!(file, "- **Proof of Concept:** [{}]({})", vuln.proof_of_concept, vuln.proof_of_concept).unwrap();
+        writeln!(
+            file,
+            "- **Proof of Concept:** [{}]({})",
+            vuln.proof_of_concept, vuln.proof_of_concept
+        )
+        .unwrap();
         writeln!(file, "- **Method:** {}", vuln.method).unwrap();
         writeln!(file, "- **Type:** {}", vuln.vuln_type).unwrap();
         writeln!(file, "- **Severity:** {}", vuln.severity).unwrap();
@@ -132,5 +137,145 @@ impl Reporter {
         )
         .unwrap();
         writeln!(file, "---").unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn create_test_reporter() -> (Reporter, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Change to temp directory for testing
+        // NOTE: This affects the current working directory for the process
+        // Tests may interfere with each other if run in parallel
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+
+        let url = Url::parse("https://example.com").unwrap();
+        let reporter = Reporter::new(url);
+
+        // Return both so temp_dir doesn't get dropped
+        (reporter, temp_dir)
+    }
+
+    #[test]
+    fn test_reporter_creation_basic() {
+        let url = Url::parse("https://test.example.com").unwrap();
+        let reporter = Reporter::new(url.clone());
+
+        // Verify the target URL is stored
+        assert_eq!(reporter.target_url, url);
+    }
+
+    #[test]
+    fn test_report_xss() {
+        let (reporter, _temp_dir) = create_test_reporter();
+
+        let vuln = crate::xss::Vulnerability {
+            proof_of_concept: Url::parse("https://example.com/page?q=<script>alert(1)</script>")
+                .unwrap(),
+            parameter: "q".to_string(),
+            payload: "<script>alert(1)</script>".to_string(),
+            vuln_type: "Reflected".to_string(),
+            severity: "Medium".to_string(),
+            method: "GET".to_string(),
+            technique: "basic".to_string(),
+        };
+
+        reporter.report_xss(&vuln);
+
+        // Force flush by dropping reporter
+        std::mem::drop(reporter);
+
+        // Verify file was created
+        let report_path = "example_com/XSS-output.md";
+        assert!(
+            fs::metadata(report_path).is_ok(),
+            "XSS report file should exist"
+        );
+
+        // Verify content
+        let content = fs::read_to_string(report_path).unwrap();
+        assert!(content.contains("XSS Vulnerability Found"));
+        assert!(content.contains("<script>alert(1)</script>"));
+        assert!(content.contains("Reflected"));
+    }
+
+    #[test]
+    fn test_report_sql_injection() {
+        let (reporter, _temp_dir) = create_test_reporter();
+
+        let vuln = crate::sql_injection_scanner::SqlInjectionVulnerability {
+            url: Url::parse("https://example.com/user?id=1'").unwrap(),
+            parameter: "id".to_string(),
+            payload: "1'".to_string(),
+            vuln_type: "Error-based".to_string(),
+        };
+
+        reporter.report_sql_injection(&vuln);
+
+        let report_path = "example_com/Sql-Injection-output.md";
+        assert!(
+            fs::metadata(report_path).is_ok(),
+            "SQL injection report file should exist"
+        );
+
+        let content = fs::read_to_string(report_path).unwrap();
+        assert!(content.contains("SQL Injection Vulnerability Found"));
+        assert!(content.contains("Error-based"));
+        assert!(content.contains("1'"));
+    }
+
+    #[test]
+    fn test_report_file_inclusion() {
+        let (reporter, _temp_dir) = create_test_reporter();
+
+        let vuln = crate::file_inclusion_scanner::FileInclusionVulnerability {
+            url: Url::parse("https://example.com/page?file=../../../etc/passwd").unwrap(),
+            parameter: "file".to_string(),
+            payload: "../../../etc/passwd".to_string(),
+            vuln_type: "LFI".to_string(),
+        };
+
+        reporter.report_file_inclusion(&vuln);
+
+        // Force flush by dropping reporter
+        std::mem::drop(reporter);
+
+        let report_path = "example_com/File-Inclusion-output.txt";
+        assert!(
+            fs::metadata(report_path).is_ok(),
+            "File inclusion report file should exist"
+        );
+
+        let content = fs::read_to_string(report_path).unwrap();
+        assert!(content.contains("Vulnerability Found"));
+        assert!(content.contains("LFI"));
+        assert!(content.contains("../../../etc/passwd"));
+    }
+
+    #[test]
+    fn test_report_directory() {
+        let (reporter, _temp_dir) = create_test_reporter();
+
+        let url = Url::parse("https://example.com/admin/").unwrap();
+        reporter.report_directory(&url, 200, 1024);
+
+        // Force flush by dropping reporter
+        std::mem::drop(reporter);
+
+        let report_path = "example_com/Open-Directories-output.md";
+        assert!(
+            fs::metadata(report_path).is_ok(),
+            "Directory report file should exist"
+        );
+
+        let content = fs::read_to_string(report_path).unwrap();
+        assert!(content.contains("Open Directory Found"));
+        assert!(content.contains("200"));
+        assert!(content.contains("1024 bytes"));
     }
 }

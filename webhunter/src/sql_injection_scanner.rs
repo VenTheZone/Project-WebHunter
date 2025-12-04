@@ -36,10 +36,15 @@ impl<'a> SqlInjectionScanner<'a> {
         reporter: &'a Arc<Reporter>,
         rate_limiter: Arc<RateLimiter>,
     ) -> Self {
-        let mut error_based_payloads = Self::load_payloads("webhunter/wordlists/sql_injection/error_based.txt");
-        error_based_payloads.extend(Self::load_payloads("webhunter/wordlists/sql_injection/original_payloads.txt"));
-        let boolean_based_payloads = Self::load_boolean_payloads("webhunter/wordlists/sql_injection/boolean_based.txt");
-        let time_based_payloads = Self::load_payloads("webhunter/wordlists/sql_injection/time_based.txt");
+        let mut error_based_payloads =
+            Self::load_payloads("webhunter/wordlists/sql_injection/error_based.txt");
+        error_based_payloads.extend(Self::load_payloads(
+            "webhunter/wordlists/sql_injection/original_payloads.txt",
+        ));
+        let boolean_based_payloads =
+            Self::load_boolean_payloads("webhunter/wordlists/sql_injection/boolean_based.txt");
+        let time_based_payloads =
+            Self::load_payloads("webhunter/wordlists/sql_injection/time_based.txt");
 
         Self {
             target_urls,
@@ -83,19 +88,13 @@ impl<'a> SqlInjectionScanner<'a> {
             + self.time_based_payloads.len()
     }
 
-    pub async fn scan(
-        &self,
-        pb: &ProgressBar,
-    ) -> Result<(), reqwest::Error> {
+    pub async fn scan(&self, pb: &ProgressBar) -> Result<(), reqwest::Error> {
         self.scan_urls(pb).await?;
         self.scan_forms(pb).await?;
         Ok(())
     }
 
-    async fn scan_urls(
-        &self,
-        pb: &ProgressBar,
-    ) -> Result<(), reqwest::Error> {
+    async fn scan_urls(&self, pb: &ProgressBar) -> Result<(), reqwest::Error> {
         let client = reqwest::Client::new();
 
         for url in &self.target_urls {
@@ -112,15 +111,22 @@ impl<'a> SqlInjectionScanner<'a> {
                         break;
                     }
                 }
-                if vulnerable { continue; }
+                if vulnerable {
+                    continue;
+                }
 
                 for (true_payload, false_payload) in &self.boolean_based_payloads {
-                     if self.test_boolean_based(&client, url, true_payload, false_payload, i, pb).await? {
+                    if self
+                        .test_boolean_based(&client, url, true_payload, false_payload, i, pb)
+                        .await?
+                    {
                         vulnerable = true;
                         break;
                     }
                 }
-                if vulnerable { continue; }
+                if vulnerable {
+                    continue;
+                }
 
                 for payload in &self.time_based_payloads {
                     if self.test_time_based(&client, url, payload, i, pb).await? {
@@ -182,7 +188,10 @@ impl<'a> SqlInjectionScanner<'a> {
                         payload: format!("{} / {}", true_payload, false_payload),
                         vuln_type: "Boolean-Based".to_string(),
                     };
-                    println!("[+] SQL Injection Found: {} in {}", vuln.payload, vuln.parameter);
+                    println!(
+                        "[+] SQL Injection Found: {} in {}",
+                        vuln.payload, vuln.parameter
+                    );
                     self.reporter.report_sql_injection(&vuln);
                     return Ok(true);
                 }
@@ -229,7 +238,10 @@ impl<'a> SqlInjectionScanner<'a> {
                     payload: payload.to_string(),
                     vuln_type: "Time-Based".to_string(),
                 };
-                println!("[+] SQL Injection Found: {} in {}", vuln.payload, vuln.parameter);
+                println!(
+                    "[+] SQL Injection Found: {} in {}",
+                    vuln.payload, vuln.parameter
+                );
                 self.reporter.report_sql_injection(&vuln);
                 return Ok(true);
             }
@@ -238,33 +250,43 @@ impl<'a> SqlInjectionScanner<'a> {
         Ok(false)
     }
 
-    async fn scan_forms(
-        &self,
-        pb: &ProgressBar,
-    ) -> Result<(), reqwest::Error> {
+    async fn scan_forms(&self, pb: &ProgressBar) -> Result<(), reqwest::Error> {
         let client = reqwest::Client::new();
 
         for form in &self.forms {
             for i in 0..form.inputs.len() {
                 let mut vulnerable = false;
                 for payload in &self.error_based_payloads {
-                    if self.test_form_error_based(&client, form, payload, i, pb).await? {
+                    if self
+                        .test_form_error_based(&client, form, payload, i, pb)
+                        .await?
+                    {
                         vulnerable = true;
                         break;
                     }
                 }
-                if vulnerable { continue; }
+                if vulnerable {
+                    continue;
+                }
 
                 for (true_payload, false_payload) in &self.boolean_based_payloads {
-                    if self.test_form_boolean_based(&client, form, true_payload, false_payload, i, pb).await? {
+                    if self
+                        .test_form_boolean_based(&client, form, true_payload, false_payload, i, pb)
+                        .await?
+                    {
                         vulnerable = true;
                         break;
                     }
                 }
-                if vulnerable { continue; }
+                if vulnerable {
+                    continue;
+                }
 
                 for payload in &self.time_based_payloads {
-                    if self.test_form_time_based(&client, form, payload, i, pb).await? {
+                    if self
+                        .test_form_time_based(&client, form, payload, i, pb)
+                        .await?
+                    {
                         break;
                     }
                 }
@@ -316,7 +338,10 @@ impl<'a> SqlInjectionScanner<'a> {
                     payload: payload.to_string(),
                     vuln_type: "Error-Based".to_string(),
                 };
-                println!("[+] SQL Injection Found: {} in {}", vuln.payload, vuln.parameter);
+                println!(
+                    "[+] SQL Injection Found: {} in {}",
+                    vuln.payload, vuln.parameter
+                );
                 self.reporter.report_sql_injection(&vuln);
                 return Ok(true);
             }
@@ -372,9 +397,17 @@ impl<'a> SqlInjectionScanner<'a> {
 
         self.rate_limiter.wait().await;
         let false_response = if form.method.to_lowercase() == "post" {
-            client.post(action_url).form(&false_form_data).send().await?
+            client
+                .post(action_url)
+                .form(&false_form_data)
+                .send()
+                .await?
         } else {
-            client.get(action_url).query(&false_form_data).send().await?
+            client
+                .get(action_url)
+                .query(&false_form_data)
+                .send()
+                .await?
         };
 
         pb.inc(2);
@@ -382,7 +415,9 @@ impl<'a> SqlInjectionScanner<'a> {
             return Ok(false);
         }
 
-        if let (Ok(true_body), Ok(false_body)) = (true_response.text().await, false_response.text().await) {
+        if let (Ok(true_body), Ok(false_body)) =
+            (true_response.text().await, false_response.text().await)
+        {
             if true_body != false_body {
                 let vuln = SqlInjectionVulnerability {
                     url: form.url.clone(),
@@ -390,7 +425,10 @@ impl<'a> SqlInjectionScanner<'a> {
                     payload: format!("{} / {}", true_payload, false_payload),
                     vuln_type: "Boolean-Based".to_string(),
                 };
-                println!("[+] SQL Injection Found: {} in {}", vuln.payload, vuln.parameter);
+                println!(
+                    "[+] SQL Injection Found: {} in {}",
+                    vuln.payload, vuln.parameter
+                );
                 self.reporter.report_sql_injection(&vuln);
                 return Ok(true);
             }
@@ -442,7 +480,10 @@ impl<'a> SqlInjectionScanner<'a> {
                 payload: payload.to_string(),
                 vuln_type: "Time-Based".to_string(),
             };
-            println!("[+] SQL Injection Found: {} in {}", vuln.payload, vuln.parameter);
+            println!(
+                "[+] SQL Injection Found: {} in {}",
+                vuln.payload, vuln.parameter
+            );
             self.reporter.report_sql_injection(&vuln);
             return Ok(true);
         }
@@ -485,7 +526,10 @@ impl<'a> SqlInjectionScanner<'a> {
                         payload: payload.to_string(),
                         vuln_type: "Error-Based".to_string(),
                     };
-                    println!("[+] SQL Injection Found: {} in {}", vuln.payload, vuln.parameter);
+                    println!(
+                        "[+] SQL Injection Found: {} in {}",
+                        vuln.payload, vuln.parameter
+                    );
                     self.reporter.report_sql_injection(&vuln);
                     return Ok(true);
                 }
@@ -495,7 +539,11 @@ impl<'a> SqlInjectionScanner<'a> {
         Ok(false)
     }
 
-    async fn send_get_request(&self, client: &reqwest::Client, url: &Url) -> Option<reqwest::Response> {
+    async fn send_get_request(
+        &self,
+        client: &reqwest::Client,
+        url: &Url,
+    ) -> Option<reqwest::Response> {
         match client.get(url.clone()).send().await {
             Ok(response) => {
                 if response.status() == reqwest::StatusCode::NOT_FOUND {
@@ -531,5 +579,121 @@ impl<'a> SqlInjectionScanner<'a> {
             "SQLITE_ERROR",
         ];
         error_patterns.iter().any(|&p| body.contains(p))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_load_payloads() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "' OR '1'='1").unwrap();
+        writeln!(temp_file, "1' OR '1' = '1").unwrap();
+        writeln!(temp_file, "admin'--").unwrap();
+
+        let path = temp_file.path().to_str().unwrap();
+        let payloads = SqlInjectionScanner::load_payloads(path);
+
+        assert_eq!(payloads.len(), 3);
+        assert_eq!(payloads[0], "' OR '1'='1");
+        assert_eq!(payloads[2], "admin'--");
+    }
+
+    #[test]
+    fn test_load_boolean_payloads() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "' AND '1'='1/' AND '1'='2").unwrap();
+        writeln!(temp_file, "' OR 1=1--/' OR 1=2--").unwrap();
+        writeln!(temp_file, "InvalidLine").unwrap(); // Should be ignored
+
+        let path = temp_file.path().to_str().unwrap();
+        let payloads = SqlInjectionScanner::load_boolean_payloads(path);
+
+        assert_eq!(payloads.len(), 2);
+        assert_eq!(payloads[0].0, "' AND '1'='1");
+        assert_eq!(payloads[0].1, "' AND '1'='2");
+        assert_eq!(payloads[1].0, "' OR 1=1--");
+    }
+
+    #[test]
+    fn test_is_error_based_vulnerable_mysql() {
+        let reporter = Arc::new(crate::reporter::Reporter::new(
+            Url::parse("https://example.com").unwrap(),
+        ));
+        let rate_limiter = Arc::new(RateLimiter::new(std::time::Duration::from_millis(100)));
+        let scanner = SqlInjectionScanner::new(vec![], vec![], &reporter, rate_limiter);
+
+        let body = "You have an error in your SQL syntax; check the manual";
+        assert!(
+            scanner.is_error_based_vulnerable(body),
+            "Should detect MySQL error"
+        );
+    }
+
+    #[test]
+    fn test_is_error_based_vulnerable_postgresql() {
+        let reporter = Arc::new(crate::reporter::Reporter::new(
+            Url::parse("https://example.com").unwrap(),
+        ));
+        let rate_limiter = Arc::new(RateLimiter::new(std::time::Duration::from_millis(100)));
+        let scanner = SqlInjectionScanner::new(vec![], vec![], &reporter, rate_limiter);
+
+        let body = "ERROR: syntax error at or near 'SELECT'";
+        assert!(
+            scanner.is_error_based_vulnerable(body),
+            "Should detect PostgreSQL error"
+        );
+    }
+
+    #[test]
+    fn test_is_error_based_vulnerable_mssql() {
+        let reporter = Arc::new(crate::reporter::Reporter::new(
+            Url::parse("https://example.com").unwrap(),
+        ));
+        let rate_limiter = Arc::new(RateLimiter::new(std::time::Duration::from_millis(100)));
+        let scanner = SqlInjectionScanner::new(vec![], vec![], &reporter, rate_limiter);
+
+        let body = "Microsoft OLE DB Provider for SQL Server error '80040e14'";
+        assert!(
+            scanner.is_error_based_vulnerable(body),
+            "Should detect MSSQL error"
+        );
+    }
+
+    #[test]
+    fn test_is_error_based_not_vulnerable() {
+        let reporter = Arc::new(crate::reporter::Reporter::new(
+            Url::parse("https://example.com").unwrap(),
+        ));
+        let rate_limiter = Arc::new(RateLimiter::new(std::time::Duration::from_millis(100)));
+        let scanner = SqlInjectionScanner::new(vec![], vec![], &reporter, rate_limiter);
+
+        let body = "<html><body>Normal page content</body></html>";
+        assert!(
+            !scanner.is_error_based_vulnerable(body),
+            "Should not detect SQL error in normal response"
+        );
+    }
+
+    #[test]
+    fn test_payloads_count() {
+        let reporter = Arc::new(crate::reporter::Reporter::new(
+            Url::parse("https://example.com").unwrap(),
+        ));
+        let rate_limiter = Arc::new(RateLimiter::new(std::time::Duration::from_millis(100)));
+        let scanner = SqlInjectionScanner::new(vec![], vec![], &reporter, rate_limiter);
+
+        let count = scanner.payloads_count();
+        // count depends on files loaded, verify it calculates correctly
+        assert_eq!(
+            count,
+            scanner.error_based_payloads.len()
+                + scanner.boolean_based_payloads.len() * 2
+                + scanner.time_based_payloads.len()
+        );
     }
 }

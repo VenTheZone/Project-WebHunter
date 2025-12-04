@@ -20,3 +20,8 @@ figlet-rs = "0.1.5"
 crossterm = "0.27.0"
 rand = "0.8.5"
 html-escape = "0.2.13"
+
+[dev-dependencies]
+mockito = "1.2.0"
+tokio-test = "0.4.3"
+tempfile = "3.8"

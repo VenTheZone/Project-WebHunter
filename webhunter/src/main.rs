@@ -1,26 +1,26 @@
 use clap::Parser;
+use colored::*;
 use dialoguer::{theme::ColorfulTheme, Input, Select};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use std::sync::Arc;
-use tokio::sync::Semaphore;
-use url::Url;
-use std::time::Duration;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
-use colored::*;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Semaphore;
+use url::Url;
 
-mod crawler;
-mod dir_scanner;
-mod form;
-mod reporter;
-mod xss;
-mod dependency_manager;
-mod file_inclusion_scanner;
-mod sql_injection_scanner;
 mod animation;
 mod bypass_403;
+mod crawler;
+mod dependency_manager;
+mod dir_scanner;
+mod file_inclusion_scanner;
+mod form;
 mod rate_limiter;
+mod reporter;
+mod sql_injection_scanner;
+mod xss;
 
 struct Config {
     request_delay: Duration,
@@ -41,7 +41,10 @@ fn configure_rate_limit() -> Config {
                     continue;
                 }
                 if rps > 100 {
-                    println!("{}", "RPS is capped at 100 to prevent overwhelming the target server.".yellow());
+                    println!(
+                        "{}",
+                        "RPS is capped at 100 to prevent overwhelming the target server.".yellow()
+                    );
                     rps = 100;
                 }
                 println!("Running at {} RPS.", rps);
@@ -84,7 +87,12 @@ async fn crawl_target(
 }
 
 #[derive(Parser, Debug, Clone)]
-#[command(author, version, about, long_about = "A comprehensive web vulnerability scanner.")]
+#[command(
+    author,
+    version,
+    about,
+    long_about = "A comprehensive web vulnerability scanner."
+)]
 struct Cli {
     /// The target website URL to scan
     #[arg(short, long)]
@@ -109,7 +117,10 @@ struct Cli {
 
 #[tokio::main]
 async fn main() {
-    std::env::set_var("RUST_BACKTRACE", "full");
+    // SAFETY: This is set at the start of main before any threads are spawned
+    unsafe {
+        std::env::set_var("RUST_BACKTRACE", "full");
+    }
     animation::run_intro_animation();
     let cli = Cli::parse();
 
@@ -201,13 +212,16 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
             }
         },
         _ => {
-            eprintln!("Invalid scanner type provided. Available options: xss, dir, file, sql, bypass/403");
+            eprintln!(
+                "Invalid scanner type provided. Available options: xss, dir, file, sql, bypass/403"
+            );
             return;
         }
     };
 
     let m = MultiProgress::new();
-    let sty = if selection == 0 { // XSS Scanner
+    let sty = if selection == 0 {
+        // XSS Scanner
         ProgressStyle::with_template(
             "{spinner:.green} [{elapsed_precise}] {wide_bar:.cyan/blue} {pos:>7}/{len:7} {msg}",
         )
@@ -221,10 +235,12 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         .progress_chars("#>-")
     };
 
-    let url = match Url::parse(&target_url) {
+    let url = match Url::parse(target_url) {
         Ok(url) => url,
         Err(url::ParseError::RelativeUrlWithoutBase) => {
-            eprintln!("Error: Invalid URL. Please provide an absolute URL (e.g., http://example.com)");
+            eprintln!(
+                "Error: Invalid URL. Please provide an absolute URL (e.g., http://example.com)"
+            );
             return;
         }
         Err(e) => {
@@ -236,13 +252,22 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
     let reporter = Arc::new(reporter::Reporter::new(url.clone()));
 
     if selection == 0 {
-        let (found_urls, found_forms) = match crawl_target(url.clone(), &m, &sty, &rate_limiter).await {
-            Ok((urls, forms)) => (urls, forms),
-            Err(_) => return,
-        };
+        let (found_urls, found_forms) =
+            match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+                Ok((urls, forms)) => (urls, forms),
+                Err(_) => return,
+            };
 
-        let scanner = xss::XssScanner::new(found_urls.clone(), found_forms.clone(), &reporter, Arc::clone(rate_limiter));
-        let num_url_params = found_urls.iter().filter(|u| u.query_pairs().count() > 0).count();
+        let scanner = xss::XssScanner::new(
+            found_urls.clone(),
+            found_forms.clone(),
+            &reporter,
+            Arc::clone(rate_limiter),
+        );
+        let num_url_params = found_urls
+            .iter()
+            .filter(|u| u.query_pairs().count() > 0)
+            .count();
         let num_form_inputs = found_forms.iter().map(|f| f.inputs.len()).sum::<usize>();
         let total_checks = (num_url_params + num_form_inputs) * scanner.payloads_count();
 
@@ -287,7 +312,8 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
 
         let pb_dir = m.add(ProgressBar::new_spinner());
         pb_dir.set_style(sty.clone());
-        let dir_scanner = dir_scanner::DirScanner::new(url.clone(), &pb_dir, cli.wordlist.clone(), &reporter);
+        let dir_scanner =
+            dir_scanner::DirScanner::new(url.clone(), &pb_dir, cli.wordlist.clone(), &reporter);
 
         if let Err(e) = dir_scanner.scan().await {
             pb_dir.finish_with_message(format!("Directory scan failed: {}", e));
@@ -296,10 +322,11 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
             pb_dir.finish_with_message("Directory scan complete");
         }
     } else if selection == 2 {
-        let (found_urls, found_forms) = match crawl_target(url.clone(), &m, &sty, &rate_limiter).await {
-            Ok((urls, forms)) => (urls, forms),
-            Err(_) => return,
-        };
+        let (found_urls, found_forms) =
+            match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+                Ok((urls, forms)) => (urls, forms),
+                Err(_) => return,
+            };
 
         let scanner = file_inclusion_scanner::FileInclusionScanner::new(
             found_urls.clone(),
@@ -320,10 +347,11 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
             pb_scan.finish_with_message("Scanning complete");
         }
     } else if selection == 3 {
-        let (found_urls, found_forms) = match crawl_target(url.clone(), &m, &sty, &rate_limiter).await {
-            Ok((urls, forms)) => (urls, forms),
-            Err(_) => return,
-        };
+        let (found_urls, found_forms) =
+            match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+                Ok((urls, forms)) => (urls, forms),
+                Err(_) => return,
+            };
 
         let scanner = sql_injection_scanner::SqlInjectionScanner::new(
             found_urls.clone(),
@@ -346,7 +374,12 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
     } else if selection == 4 {
         let pb_bypass = m.add(ProgressBar::new(100));
         pb_bypass.set_style(sty.clone());
-        let bypass_scanner = bypass_403::BypassScanner::new(url.clone(), &pb_bypass, &reporter, Arc::clone(rate_limiter));
+        let bypass_scanner = bypass_403::BypassScanner::new(
+            url.clone(),
+            &pb_bypass,
+            &reporter,
+            Arc::clone(rate_limiter),
+        );
 
         if let Err(e) = bypass_scanner.scan().await {
             pb_bypass.finish_with_message(format!("403 bypass scan failed: {}", e));
@@ -358,7 +391,9 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
 }
 
 fn read_lines<P>(filename: P) -> io::Result<Vec<String>>
-where P: AsRef<Path>, {
+where
+    P: AsRef<Path>,
+{
     let file = File::open(filename)?;
     io::BufReader::new(file).lines().collect()
 }

@@ -1,13 +1,13 @@
 use crate::form::{Form, FormInput};
 use crate::rate_limiter::RateLimiter;
 use indicatif::ProgressBar;
+use rand::seq::SliceRandom;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
 use std::fs;
 use std::io::{self, BufRead};
 use std::sync::Arc;
 use url::Url;
-use rand::seq::SliceRandom;
 
 pub struct Crawler {
     target_url: Url,
@@ -81,13 +81,14 @@ impl Crawler {
                 let user_agent = &self.user_agents[depth % self.user_agents.len()];
                 let mut request = client.get(url.clone()).header("User-Agent", user_agent);
 
-                if let Some((header_name, header_value)) = self.http_headers.choose(&mut rand::thread_rng()) {
+                if let Some((header_name, header_value)) =
+                    self.http_headers.choose(&mut rand::thread_rng())
+                {
                     request = request.header(header_name, header_value);
                 }
 
                 self.rate_limiter.wait().await;
-                let response = match request.send().await
-                {
+                let response = match request.send().await {
                     Ok(resp) => {
                         if resp.status() == reqwest::StatusCode::NOT_FOUND {
                             continue;
@@ -127,7 +128,11 @@ impl Crawler {
                     let form_selector = Selector::parse("form").unwrap();
                     let input_selector = Selector::parse("input").unwrap();
                     for form_element in document.select(&form_selector) {
-                        let action = form_element.value().attr("action").unwrap_or("").to_string();
+                        let action = form_element
+                            .value()
+                            .attr("action")
+                            .unwrap_or("")
+                            .to_string();
                         let method = form_element
                             .value()
                             .attr("method")
@@ -139,11 +144,12 @@ impl Crawler {
                             if name.is_empty() {
                                 continue;
                             }
-                            let value = input_element.value().attr("value").unwrap_or("").to_string();
-                            inputs.push(FormInput {
-                                name,
-                                value,
-                            });
+                            let value = input_element
+                                .value()
+                                .attr("value")
+                                .unwrap_or("")
+                                .to_string();
+                            inputs.push(FormInput { name, value });
                         }
                         self.forms.push(Form {
                             action,
