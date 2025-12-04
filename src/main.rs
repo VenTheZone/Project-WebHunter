@@ -13,6 +13,8 @@ use url::Url;
 mod access_control_scanner;
 mod animation;
 mod auth_bypass_scanner;
+mod blind_xss_scanner;
+mod blind_xss_server;
 mod bypass_403;
 mod crawler;
 mod csrf_scanner;
@@ -212,6 +214,7 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
                 "CSRF",
                 "Authentication Bypass",
                 "Broken Access Control",
+                "Blind XSS (Out-of-Band)",
             ])
             .interact()
         {
@@ -533,6 +536,65 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         } else {
             pb.finish_with_message("Access Control scan complete.");
         }
+    } else if selection == 8 {
+        // Blind XSS Scanner
+        let (found_urls, found_forms) =
+            match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+                Ok((urls, forms)) => (urls, forms),
+                Err(_) => return,
+            };
+
+        // Set up callback server
+        let callback_port = 8080;
+        let callback_url = format!("http://localhost:{}", callback_port);
+        let payload_tracker = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+
+        // Spawn callback server in background
+        let tracker_clone = payload_tracker.clone();
+        tokio::spawn(async move {
+            if let Err(e) =
+                blind_xss_server::start_callback_server(callback_port, tracker_clone).await
+            {
+                eprintln!("Callback server error: {}", e);
+            }
+        });
+
+        // Give server time to start
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        println!("Starting Blind XSS scan...");
+        println!("Callback server listening on: {}", callback_url);
+
+        let scanner = blind_xss_scanner::BlindXssScanner::new(
+            found_urls.clone(),
+            found_forms.clone(),
+            callback_url,
+            payload_tracker.clone(),
+            &reporter,
+            Arc::clone(rate_limiter),
+        );
+
+        // Estimate payload count (4 variants per parameter/input)
+        let param_count: usize = found_urls.iter().map(|u| u.query_pairs().count()).sum();
+        let input_count: usize = found_forms.iter().map(|f| f.inputs.len()).sum();
+        let total_payloads = (param_count + input_count) * 4;
+
+        let pb = m.add(ProgressBar::new(total_payloads as u64));
+        pb.set_style(sty.clone());
+
+        if let Err(e) = scanner.scan(&pb).await {
+            eprintln!("Error scanning for Blind XSS: {}", e);
+        } else {
+            pb.finish_with_message("Payload injection complete.");
+        }
+
+        // Wait for delayed callbacks
+        println!("\n[*] Waiting 60 seconds for callbacks...");
+        tokio::time::sleep(Duration::from_secs(60)).await;
+
+        // Report findings
+        scanner.report_findings().await;
+        println!("[*] Blind XSS scan complete.");
     }
 }
 fn read_lines<P>(filename: P) -> io::Result<Vec<String>>
