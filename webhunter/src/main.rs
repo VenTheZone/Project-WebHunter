@@ -13,8 +13,10 @@ use url::Url;
 mod animation;
 mod bypass_403;
 mod crawler;
+mod csrf_scanner;
 mod dependency_manager;
 mod dir_scanner;
+mod dom_xss_scanner;
 mod file_inclusion_scanner;
 mod form;
 mod rate_limiter;
@@ -194,6 +196,7 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         Some(scanner) if scanner.to_lowercase() == "file" => 2,
         Some(scanner) if scanner.to_lowercase() == "sql" => 3,
         Some(scanner) if scanner.to_lowercase() == "bypass" || scanner == "403" => 4,
+        Some(scanner) if scanner.to_lowercase() == "csrf" => 5,
         None => match Select::with_theme(&ColorfulTheme::default())
             .with_prompt("Choose an option")
             .items(&[
@@ -202,6 +205,7 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
                 "File Inclusion",
                 "SQL Injection",
                 "403/401 Bypass",
+                "CSRF",
             ])
             .interact()
         {
@@ -252,36 +256,88 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
     let reporter = Arc::new(reporter::Reporter::new(url.clone()));
 
     if selection == 0 {
-        let (found_urls, found_forms) =
-            match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
-                Ok((urls, forms)) => (urls, forms),
-                Err(_) => return,
-            };
-
-        let scanner = xss::XssScanner::new(
-            found_urls.clone(),
-            found_forms.clone(),
-            &reporter,
-            Arc::clone(rate_limiter),
-        );
-        let num_url_params = found_urls
-            .iter()
-            .filter(|u| u.query_pairs().count() > 0)
-            .count();
-        let num_form_inputs = found_forms.iter().map(|f| f.inputs.len()).sum::<usize>();
-        let total_checks = (num_url_params + num_form_inputs) * scanner.payloads_count();
-
-        if total_checks == 0 {
-            println!("No parameters or forms to test for XSS.");
-            m.clear().unwrap();
-            return;
-        }
-
-        println!("Starting XSS scan...");
-        if let Err(e) = scanner.scan().await {
-            eprintln!("Error scanning for XSS: {}", e);
+        // XSS Scanner - Ask user which type
+        let xss_type = if cli.scanner.is_some() {
+            // Non-interactive: default to reflected/stored
+            0
         } else {
-            println!("XSS scan complete.");
+            Select::with_theme(&ColorfulTheme::default())
+                .with_prompt("Select XSS scan type")
+                .items(&["Reflected/Stored XSS", "DOM-based XSS"])
+                .default(0)
+                .interact()
+                .unwrap_or(0)
+        };
+
+        if xss_type == 0 {
+            // Existing Reflected/Stored XSS scanner
+            let (found_urls, found_forms) =
+                match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+                    Ok((urls, forms)) => (urls, forms),
+                    Err(_) => return,
+                };
+
+            let scanner = xss::XssScanner::new(
+                found_urls.clone(),
+                found_forms.clone(),
+                &reporter,
+                Arc::clone(rate_limiter),
+            );
+            let num_url_params = found_urls
+                .iter()
+                .filter(|u| u.query_pairs().count() > 0)
+                .count();
+            let num_form_inputs = found_forms.iter().map(|f| f.inputs.len()).sum::<usize>();
+            let total_checks = (num_url_params + num_form_inputs) * scanner.payloads_count();
+
+            if total_checks == 0 {
+                println!("No parameters or forms to test for XSS.");
+                m.clear().unwrap();
+                return;
+            }
+
+            println!("Starting Reflected/Stored XSS scan...");
+            if let Err(e) = scanner.scan().await {
+                eprintln!("Error scanning for XSS: {}", e);
+            } else {
+                println!("XSS scan complete.");
+            }
+        } else {
+            // New DOM-based XSS scanner
+            let (found_urls, _found_forms) =
+                match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+                    Ok((urls, forms)) => (urls, forms),
+                    Err(_) => return,
+                };
+
+            println!(
+                "Starting DOM-based XSS analysis on {} pages...",
+                found_urls.len()
+            );
+
+            let dom_scanner =
+                dom_xss_scanner::DomXssScanner::new(&reporter, Arc::clone(rate_limiter));
+
+            // Fetch and analyze each page for DOM XSS
+            let client = reqwest::Client::new();
+            for page_url in found_urls {
+                rate_limiter.wait().await;
+
+                match client.get(page_url.as_str()).send().await {
+                    Ok(response) => {
+                        if let Ok(html) = response.text().await {
+                            if let Err(e) = dom_scanner.scan(page_url.clone(), html).await {
+                                eprintln!("Error analyzing {}: {}", page_url, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error fetching {}: {}", page_url, e);
+                    }
+                }
+            }
+
+            println!("DOM XSS analysis complete.");
         }
     } else if selection == 1 {
         if cli.force_install || !dependency_manager::is_feroxbuster_installed() {
@@ -386,6 +442,28 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
             eprintln!("Error scanning for 403 bypasses: {}", e);
         } else {
             pb_bypass.finish_with_message("403 bypass scan complete");
+        }
+    } else if selection == 5 {
+        // CSRF Scanner
+        let (found_urls, found_forms) =
+            match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+                Ok((urls, forms)) => (urls, forms),
+                Err(_) => return,
+            };
+
+        let scanner = csrf_scanner::CsrfScanner::new(
+            found_forms.clone(),
+            found_urls.clone(),
+            &reporter,
+            Arc::clone(rate_limiter),
+        );
+
+        println!("Starting CSRF scan on {} forms...", found_forms.len());
+
+        if let Err(e) = scanner.scan().await {
+            eprintln!("Error scanning for CSRF: {}", e);
+        } else {
+            println!("CSRF scan complete.");
         }
     }
 }

@@ -1,5 +1,9 @@
 # WebHunter
 
+<p align="center">
+  <img src="logo.png" alt="WebHunter Logo" width="400"/>
+</p>
+
 WebHunter is a command-line tool for ethical hacking, designed to find common vulnerabilities in websites. It is written in Rust and provides a simple, interactive interface for running various scanning modules.
 
 ## Features

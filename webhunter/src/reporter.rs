@@ -138,6 +138,51 @@ impl Reporter {
         .unwrap();
         writeln!(file, "---").unwrap();
     }
+
+    pub fn report_csrf(&self, vuln: &crate::csrf_scanner::CsrfVulnerability) {
+        let mut file = self.get_report_file("CSRF-output.md").unwrap();
+
+        writeln!(file, "## CSRF Vulnerability Found:").unwrap();
+        writeln!(
+            file,
+            "| URL | Form Action | Method | Missing Protections | Severity |"
+        )
+        .unwrap();
+        writeln!(file, "|---|---|---|---|---|").unwrap();
+        writeln!(
+            file,
+            "| [{}]({}) | {} | {} | {} | {} |",
+            vuln.url,
+            vuln.url,
+            vuln.form_action,
+            vuln.method,
+            vuln.missing_protections.join(", "),
+            vuln.severity
+        )
+        .unwrap();
+
+        writeln!(file, "\n### Proof of Concept:").unwrap();
+        writeln!(file, "```html\n{}\n```", vuln.poc_html).unwrap();
+        writeln!(file, "---").unwrap();
+    }
+
+    pub fn report_dom_xss(&self, vuln: &crate::dom_xss_scanner::DomXssVulnerability) {
+        let mut file = self.get_report_file("DOM-XSS-output.md").unwrap();
+
+        writeln!(file, "## DOM-based XSS Vulnerability Found:").unwrap();
+        writeln!(file, "| URL | Source | Sink | Line | Severity |").unwrap();
+        writeln!(file, "|---|---|---|---|---|").unwrap();
+        writeln!(
+            file,
+            "| [{}]({}) | {} | {} | {} | {} |",
+            vuln.url, vuln.url, vuln.source, vuln.sink, vuln.line_number, vuln.severity
+        )
+        .unwrap();
+
+        writeln!(file, "\n### Vulnerable Code:").unwrap();
+        writeln!(file, "```javascript\n{}\n```", vuln.code_snippet).unwrap();
+        writeln!(file, "---").unwrap();
+    }
 }
 
 #[cfg(test)]
