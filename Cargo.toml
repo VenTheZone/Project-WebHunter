@@ -18,5 +18,10 @@ serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.117"
 figlet-rs = "0.1.5"
 crossterm = "0.27.0"
-rand = "0.8.5"
-headless_chrome = "1.0.8"
+rand = "0.8"
+html-escape = "0.2.13"
+
+[dev-dependencies]
+mockito = "1.2.0"
+tokio-test = "0.4.3"
+tempfile = "3.8"
