@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![WebHunter Logo](../logo.png)
+![WebHunter Logo](logo.png)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
