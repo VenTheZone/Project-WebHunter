@@ -1,9 +1,0 @@
-index.php
-login.php
-admin.php
-home.php
-controlpanel.php
-cp.php
-account.php
-moderator.php
-status.php
