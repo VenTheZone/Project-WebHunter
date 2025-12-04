@@ -67,10 +67,10 @@ graph TD
     N --> P[Generate Markdown Report]
     P --> O
     
-    style A fill:#e1f5ff
-    style K fill:#fff4e1
-    style N fill:#ffe1e1
-    style O fill:#e1ffe1
+    style A fill:#4a90e2,stroke:#333,stroke-width:2px,color:#fff
+    style K fill:#f39c12,stroke:#333,stroke-width:2px,color:#fff
+    style N fill:#e74c3c,stroke:#333,stroke-width:2px,color:#fff
+    style O fill:#27ae60,stroke:#333,stroke-width:2px,color:#fff
 ```
 
 ## Workflow
@@ -126,11 +126,11 @@ flowchart TD
     
     GenerateReport --> End([Scan Finished])
     
-    style Start fill:#e1f5ff
-    style Inject fill:#fff4e1
-    style RecordVuln fill:#ffe1e1
-    style End fill:#e1ffe1
-    style AnalyzeResponse fill:#f0e1ff
+    style Start fill:#3498db,stroke:#333,stroke-width:2px,color:#fff
+    style Inject fill:#f39c12,stroke:#333,stroke-width:2px,color:#fff
+    style RecordVuln fill:#e74c3c,stroke:#333,stroke-width:2px,color:#fff
+    style End fill:#27ae60,stroke:#333,stroke-width:2px,color:#fff
+    style AnalyzeResponse fill:#9b59b6,stroke:#333,stroke-width:2px,color:#fff
 ```
 
 
