@@ -1,5 +1,4 @@
 use crate::rate_limiter::RateLimiter;
-use crate::snapshot;
 use colored::*;
 use indicatif::ProgressBar;
 use std::fs;
@@ -131,7 +130,6 @@ impl<'a> BypassScanner<'a> {
 
     async fn try_bypass_directory(&self, client: &reqwest::Client, original_url: Url, directory: &str, original_body: &str) -> Option<BypassBypass> {
         let bypass_techniques = self.generate_bypass_techniques(&original_url, directory);
-        let domain = self.target_url.domain().unwrap_or("");
 
         for (technique_url, technique_name) in bypass_techniques {
             // First, check with GET
@@ -145,11 +143,8 @@ impl<'a> BypassScanner<'a> {
                 headers: None,
             };
             self.rate_limiter.wait().await;
-            if let Some((bypass, status, body)) = self.check_bypass(args).await {
+            if let Some((bypass, status, _body)) = self.check_bypass(args).await {
                 print_fancy_bypass(&bypass, status);
-                if let Err(e) = snapshot::take_snapshot(bypass.bypass_url.clone(), domain.to_string(), bypass.method.clone(), bypass.technique.clone(), body).await {
-                    eprintln!("\nFailed to take snapshot for {}: {}", &bypass.bypass_url, e);
-                }
                 return Some(bypass);
             }
 
@@ -166,11 +161,8 @@ impl<'a> BypassScanner<'a> {
                     headers: None,
                 };
                 self.rate_limiter.wait().await;
-                if let Some((bypass, status, body)) = self.check_bypass(args).await {
+                if let Some((bypass, status, _body)) = self.check_bypass(args).await {
                     print_fancy_bypass(&bypass, status);
-                    if let Err(e) = snapshot::take_snapshot(bypass.bypass_url.clone(), domain.to_string(), bypass.method.clone(), bypass.technique.clone(), body).await {
-                        eprintln!("\nFailed to take snapshot for {}: {}", &bypass.bypass_url, e);
-                    }
                     return Some(bypass);
                 }
             }
@@ -188,11 +180,8 @@ impl<'a> BypassScanner<'a> {
                         headers: Some(&headers),
                     };
                     self.rate_limiter.wait().await;
-                    if let Some((bypass, status, body)) = self.check_bypass(args).await {
+                    if let Some((bypass, status, _body)) = self.check_bypass(args).await {
                         print_fancy_bypass(&bypass, status);
-                        if let Err(e) = snapshot::take_snapshot(bypass.bypass_url.clone(), domain.to_string(), bypass.method.clone(), bypass.technique.clone(), body).await {
-                            eprintln!("\nFailed to take snapshot for {}: {}", &bypass.bypass_url, e);
-                        }
                         return Some(bypass);
                     }
                 }

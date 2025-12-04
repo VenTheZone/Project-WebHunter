@@ -1,44 +1,6 @@
 # WebHunter
 
-<div align="center">
-
-![WebHunter Logo](../logo.png)
-
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)]()
-
-**A powerful command-line tool for ethical web vulnerability scanning**
-
-</div>
-
----
-
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Rate Limiting](#rate-limiting)
-  - [Concurrent Scanning](#concurrent-scanning)
-  - [Interactive Mode](#interactive-mode)
-  - [Non-Interactive Mode](#non-interactive-mode)
-  - [Scanners](#scanners)
-  - [Options](#options)
-- [Wordlists](#wordlists)
-- [Output](#output)
-- [Disclaimer](#disclaimer)
-- [Contributing](#contributing)
-- [License](#license)
-
-## Overview
-
 WebHunter is a command-line tool for ethical hacking, designed to find common vulnerabilities in websites. It is written in Rust and provides a simple, interactive interface for running various scanning modules.
-
-> [!WARNING]
-> This tool is intended for **authorized security testing only**. Always obtain written permission before scanning any target. Unauthorized use may be illegal.
 
 ## Features
 
@@ -51,26 +13,17 @@ WebHunter is a command-line tool for ethical hacking, designed to find common vu
 -   **Multiple Target Scanning:** Scan a single target or provide a file containing a list of URLs for bulk scanning.
 -   **Concurrent Scanning:** Run scans on multiple websites concurrently to improve performance.
 
-## Prerequisites
-
-Before installing WebHunter, ensure you have the following:
-
--   **Rust 1.70 or higher**: Install from [rustup.rs](https://rustup.rs/)
--   **Git**: For cloning the repository
--   **feroxbuster** (optional): Required only for the Open Directory Scanner. WebHunter can install this automatically when needed.
-
 ## Installation
 
 1.  **Install Rust:** If you don't already have Rust installed, you can install it using `rustup`:
-    ```bash
+    ```
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
     ```
 2.  **Clone the Repository:**
-    ```bash
-    git clone https://github.com/VenTheZone/Project-WebHunter.git
-    cd Project-WebHunter
     ```
-
+    git clone https://github.com/VenTheZone/Project-WebHunter.git
+    cd webhunter
+    ```
 
 ## Usage
 
@@ -165,94 +118,3 @@ The following report files are generated:
 -   **File Inclusion Scanner:** `File-Inclusion-output.txt`
 -   **SQL Injection Scanner:** `Sql-Injection-output.md`
 -   **403/401 Bypass Scanner:** `403-Bypass-output.md`, along with `HTML` and `PNG` snapshots in the `snapshots/` subdirectory.
-
-## Disclaimer
-
-> [!CAUTION]
-> **Legal and Ethical Use Only**
-
-WebHunter is designed exclusively for **authorized security testing** and educational purposes. Users must:
-
-- ✅ Obtain **written permission** before scanning any target
-- ✅ Only test systems you own or have explicit authorization to test
-- ✅ Comply with all applicable laws and regulations
-- ✅ Use responsibly and ethically
-
-**Unauthorized use of this tool may be illegal and could result in criminal prosecution.**
-
-The developers of WebHunter assume no liability and are not responsible for any misuse or damage caused by this tool. Use at your own risk.
-
-### Responsible Disclosure
-
-If you discover vulnerabilities using WebHunter:
-1. Report them responsibly to the affected organization
-2. Allow reasonable time for remediation before public disclosure
-3. Follow coordinated disclosure practices
-4. Respect bug bounty program rules and scope
-
-## Troubleshooting
-
-### Common Issues
-
-**Issue: `feroxbuster` not found**
-- **Solution**: When running the Open Directory Scanner for the first time, WebHunter will offer to install `feroxbuster` automatically. Accept the prompt or install it manually:
-  ```bash
-  cargo install feroxbuster
-  ```
-
-**Issue: Permission denied errors**
-- **Solution**: Ensure you have the necessary permissions to write to the output directory. Try running with appropriate permissions or change the output location.
-
-**Issue: High memory usage during scans**
-- **Solution**: Reduce concurrent scanning by lowering the number of simultaneous targets when prompted. Use higher rate limiting delays to reduce request frequency.
-
-**Issue: Connection timeouts**
-- **Solution**: The target server may be slow or blocking requests. Increase the rate limiting delay or check if the target is accessible.
-
-**Issue: False positives in scan results**
-- **Solution**: Manually verify all findings. Security scanners can produce false positives. Always validate results before reporting.
-
-### Getting Help
-
-- Check the [pseudo-code documentation](pseudo-code/README.md) for detailed algorithm explanations
-- Review the [QUICKSTART guide](pseudo-code/QUICKSTART.md) for quick reference
-- Open an issue on GitHub for bug reports or feature requests
-
-## Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on:
-- Code of conduct
-- How to submit bug reports and feature requests
-- Development setup and workflow
-- Pull request guidelines
-- Coding standards
-
-## License
-
-This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
-
-```
-Copyright 2025 VenTheZone
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
-
----
-
-<div align="center">
-
-**Made with ❤️ for the security community**
-
-[Report Bug](https://github.com/VenTheZone/Project-WebHunter/issues) · [Request Feature](https://github.com/VenTheZone/Project-WebHunter/issues) · [Documentation](pseudo-code/README.md)
-
-</div>

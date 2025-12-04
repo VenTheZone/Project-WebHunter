@@ -1,22 +1,5 @@
 # WebHunter Pseudo-Code Documentation
 
-> **Quick Reference**: Start with [00-PROJECT-OVERVIEW.md](00-PROJECT-OVERVIEW.md) for architecture, then explore [INDEX.md](INDEX.md) for navigation, or jump to [QUICKSTART.md](QUICKSTART.md) for a 3-minute introduction.
-
----
-
-## 📖 Quick Reference Card
-
-| I want to... | Start here |
-|--------------|------------|
-| Understand the big picture | [00-PROJECT-OVERVIEW.md](00-PROJECT-OVERVIEW.md) |
-| Find a specific topic | [INDEX.md](INDEX.md) |
-| Get started quickly | [QUICKSTART.md](QUICKSTART.md) |
-| Learn about XSS detection | [03-XSS-SCANNER.md](03-XSS-SCANNER.md) |
-| Learn about SQL injection | [04-SQL-INJECTION-SCANNER.md](04-SQL-INJECTION-SCANNER.md) |
-| Understand the crawler | [02-CRAWLER.md](02-CRAWLER.md) |
-
----
-
 This directory contains comprehensive pseudo-code documentation for the WebHunter project, a Rust-based ethical hacking tool for web vulnerability scanning.
 
 ## Purpose
@@ -356,5 +339,4 @@ For questions or suggestions about this documentation:
 
 ---
 
-**Note**: for implementation details and the most up-to-date logic.
-This pseudo-code documentation is a reference guide. Always consult the actual Rust source code 
+**Note**: This pseudo-code documentation is a reference guide. Always consult the actual Rust source code for implementation details and the most up-to-date logic.

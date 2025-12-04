@@ -203,4 +203,4 @@ After reading this guide:
 
 ---
 
-**Ready to dive in?** Start with `README.md` or jump straight to your topic of interest using `INDEX.md`!
+**Ready to dive in?** Start with `README.md` or jump straight to your topic of interest using `INDEX.md`!Ready to dive in?** Start with `README.md` or jump straight to your topic of interest using `INDEX.md`!

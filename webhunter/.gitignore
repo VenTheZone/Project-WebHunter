@@ -1,0 +1,7 @@
+/target
+*_com/
+*_org/
+*_net/
+feroxbuster
+Makefile
+makefile

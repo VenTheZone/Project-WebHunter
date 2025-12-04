@@ -1,0 +1,22 @@
+[package]
+name = "webhunter"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+colored = "2.1.0"
+dialoguer = "0.11.0"
+indicatif = "0.17.8"
+reqwest = { version = "0.12.5", features = ["blocking", "json"] }
+scraper = "0.19.0"
+tokio = { version = "1.38.0", features = ["full"] }
+url = "2.5.2"
+chrono = "0.4.38"
+clap = { version = "4.5.8", features = ["derive"] }
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.117"
+figlet-rs = "0.1.5"
+crossterm = "0.27.0"
+rand = "0.8.5"
+html-escape = "0.2.13"

