@@ -1,3 +1,4 @@
+use crate::access_control_scanner::AccessControlVulnerability;
 use crate::bypass_403::BypassBypass;
 use crate::file_inclusion_scanner::FileInclusionVulnerability;
 use crate::sql_injection_scanner::SqlInjectionVulnerability;
@@ -24,6 +25,7 @@ impl Reporter {
         }
     }
 
+    #[allow(dead_code)] // Reserved for future custom output directory feature
     pub fn with_output_dir(mut self, path: std::path::PathBuf) -> Self {
         self.output_dir = Some(path);
         self
@@ -324,7 +326,7 @@ mod tests {
 
         // Verify content
         let content = fs::read_to_string(report_path).unwrap();
-        assert!(content.contains("XSS Vulnerability Found"));
+        assert!(content.contains("🎯 XSS Vulnerability Detected"));
         assert!(content.contains("<script>alert(1)</script>"));
         assert!(content.contains("Reflected"));
     }
@@ -347,7 +349,7 @@ mod tests {
 
         let report_path = temp_dir
             .path()
-            .join("example_com_443/Sql-Injection-output.md");
+            .join("example_com_443/SQL-Injection-output.md");
         assert!(
             report_path.exists(),
             "SQL injection report file should exist at {:?}",
@@ -355,7 +357,7 @@ mod tests {
         );
 
         let content = fs::read_to_string(report_path).unwrap();
-        assert!(content.contains("SQL Injection Vulnerability Found"));
+        assert!(content.contains("🎯 SQL Injection Vulnerability Detected"));
         assert!(content.contains("Error-based"));
         assert!(content.contains("1'"));
     }
@@ -378,7 +380,7 @@ mod tests {
 
         let report_path = temp_dir
             .path()
-            .join("example_com_443/File-Inclusion-output.txt");
+            .join("example_com_443/File-Inclusion-output.md");
         assert!(
             report_path.exists(),
             "File inclusion report file should exist at {:?}",
@@ -386,7 +388,7 @@ mod tests {
         );
 
         let content = fs::read_to_string(report_path).unwrap();
-        assert!(content.contains("Vulnerability Found"));
+        assert!(content.contains("🎯 File Inclusion Vulnerability Detected"));
         assert!(content.contains("LFI"));
         assert!(content.contains("../../../etc/passwd"));
     }
@@ -411,7 +413,7 @@ mod tests {
         );
 
         let content = fs::read_to_string(report_path).unwrap();
-        assert!(content.contains("Open Directory Found"));
+        assert!(content.contains("🎯 Open Directory Detected"));
         assert!(content.contains("200"));
         assert!(content.contains("1024 bytes"));
     }

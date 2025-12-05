@@ -99,7 +99,7 @@ impl<'a> DomXssScanner<'a> {
             .select(&script_selector)
             .filter_map(|element| {
                 let content = element.inner_html();
-                if !content.trim().is_empty() && !element.value().attr("src").is_some() {
+                if !content.trim().is_empty() && element.value().attr("src").is_none() {
                     Some(content)
                 } else {
                     None

@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields reserved for future victim tracking features
 pub struct PayloadContext {
     pub id: String,
     pub url: url::Url,
@@ -21,6 +22,7 @@ pub struct PayloadContext {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields reserved for future victim data collection
 pub struct VictimData {
     pub user_agent: Option<String>,
     pub cookies: Option<String>,
