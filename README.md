@@ -278,7 +278,6 @@ Reports are saved in directories named after the target (dots → underscores):
 - Advanced SQL Injection Techniques
 - API-Specific Vulnerability Scanning
 
-See `improvements_roadmap.md` for full feature roadmap.
 
 ## Contributing
 
