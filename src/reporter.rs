@@ -174,6 +174,32 @@ impl Reporter {
         }
     }
 
+    pub fn report_exposed_files(
+        &self,
+        vuln: &crate::exposed_files_scanner::ExposedFileVulnerability,
+    ) {
+        if let Ok(mut file) = self.get_report_file("Exposed-Files-output.md") {
+            let severity = if vuln.vuln_type.contains("Source Map") {
+                "🔴 **HIGH**"
+            } else {
+                "🟡 **MEDIUM**"
+            };
+            let _ = writeln!(file, "## 🎯 Exposed File Detected\n");
+            let _ = writeln!(file, "| Field | Value |");
+            let _ = writeln!(file, "|-------|-------|");
+            let _ = writeln!(file, "| **Severity** | {} |", severity);
+            let _ = writeln!(file, "| **Type** | {} |", vuln.vuln_type);
+            let _ = writeln!(
+                file,
+                "| **Path** | [{}]({}) |",
+                vuln.exposed_path, vuln.exposed_path
+            );
+            let _ = writeln!(file, "\n### 📝 Description\n{}", vuln.description);
+            let _ = writeln!(file, "\n### 🛡️ Remediation\n- Remove source map files from production\n- Disable debug endpoints in production\n- Use environment variables for configuration\n- Implement proper access controls");
+            let _ = writeln!(file, "\n---\n");
+        }
+    }
+
     pub fn report_dom_xss(&self, vuln: &crate::dom_xss_scanner::DomXssVulnerability) {
         if let Ok(mut file) = self.get_report_file("DOM-XSS-output.md") {
             let severity_badge = self.get_severity_badge(&vuln.severity);

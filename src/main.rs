@@ -21,6 +21,7 @@ mod csrf_scanner;
 mod dependency_manager;
 mod dir_scanner;
 mod dom_xss_scanner;
+mod exposed_files_scanner;
 mod file_inclusion_scanner;
 mod form;
 mod rate_limiter;
@@ -200,6 +201,7 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         Some(scanner) if scanner.to_lowercase() == "csrf" => 5,
         Some(scanner) if scanner.to_lowercase() == "auth" => 6,
         Some(scanner) if scanner.to_lowercase() == "bac" => 7,
+        Some(scanner) if scanner.to_lowercase() == "exposed" => 8,
         None => match Select::with_theme(&ColorfulTheme::default())
             .with_prompt("Choose an option")
             .items(&[
@@ -212,6 +214,7 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
                 "Authentication Bypass",
                 "Broken Access Control",
                 "Blind XSS (Out-of-Band)",
+                "Exposed Files (Source Maps & Debug Endpoints)",
             ])
             .interact()
         {
@@ -592,6 +595,37 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         // Report findings
         scanner.report_findings().await;
         println!("[*] Blind XSS scan complete.");
+    } else if selection == 9 {
+        // Exposed Files Scanner
+        let (found_urls, _) = match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+            Ok((urls, forms)) => (urls, forms),
+            Err(_) => return,
+        };
+
+        let mut scanner = exposed_files_scanner::ExposedFilesScanner::new(
+            url.clone(),
+            found_urls.clone(),
+            &reporter,
+            Arc::clone(rate_limiter),
+        );
+
+        let total_checks = scanner.targets_count();
+
+        if total_checks == 0 {
+            println!("No URLs found to check.");
+            m.clear().unwrap();
+            return;
+        }
+
+        println!("Starting Exposed Files scan...");
+        let pb = m.add(ProgressBar::new(total_checks as u64));
+        pb.set_style(sty.clone());
+
+        if let Err(e) = scanner.scan(&pb).await {
+            eprintln!("Error scanning for Exposed Files: {}", e);
+        } else {
+            pb.finish_with_message("Exposed Files scan complete.");
+        }
     }
 }
 fn read_lines<P>(filename: P) -> io::Result<Vec<String>>
