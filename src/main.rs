@@ -16,6 +16,7 @@ mod auth_bypass_scanner;
 mod blind_xss_scanner;
 mod blind_xss_server;
 mod bypass_403;
+mod cors_scanner;
 mod crawler;
 mod csrf_scanner;
 mod dependency_manager;
@@ -27,6 +28,7 @@ mod form;
 mod rate_limiter;
 mod reporter;
 mod sql_injection_scanner;
+mod ssrf_scanner;
 mod xss;
 
 struct Config {
@@ -202,6 +204,8 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         Some(scanner) if scanner.to_lowercase() == "auth" => 6,
         Some(scanner) if scanner.to_lowercase() == "bac" => 7,
         Some(scanner) if scanner.to_lowercase() == "exposed" => 8,
+        Some(scanner) if scanner.to_lowercase() == "cors" => 9,
+        Some(scanner) if scanner.to_lowercase() == "ssrf" => 10,
         None => match Select::with_theme(&ColorfulTheme::default())
             .with_prompt("Choose an option")
             .items(&[
@@ -215,6 +219,8 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
                 "Broken Access Control",
                 "Blind XSS (Out-of-Band)",
                 "Exposed Files (Source Maps & Debug Endpoints)",
+                "CORS Misconfiguration",
+                "SSRF (Server-Side Request Forgery)",
             ])
             .interact()
         {
@@ -625,6 +631,89 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
             eprintln!("Error scanning for Exposed Files: {}", e);
         } else {
             pb.finish_with_message("Exposed Files scan complete.");
+        }
+    } else if selection == 10 {
+        // CORS Scanner
+        let (found_urls, _) = match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+            Ok((urls, forms)) => (urls, forms),
+            Err(_) => return,
+        };
+
+        let mut scanner = cors_scanner::CorsScanner::new(
+            url.clone(),
+            found_urls.clone(),
+            &reporter,
+            Arc::clone(rate_limiter),
+        );
+
+        let total_checks = scanner.targets_count();
+
+        if total_checks == 0 {
+            println!("No URLs found to check.");
+            m.clear().unwrap();
+            return;
+        }
+
+        println!("Starting CORS Misconfiguration scan...");
+        let pb = m.add(ProgressBar::new(total_checks as u64));
+        pb.set_style(sty.clone());
+
+        if let Err(e) = scanner.scan(&pb).await {
+            eprintln!("Error scanning for CORS: {}", e);
+        } else {
+            pb.finish_with_message("CORS scan complete.");
+        }
+    } else if selection == 11 {
+        // SSRF Scanner
+        let (found_urls, _) = match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+            Ok((urls, forms)) => (urls, forms),
+            Err(_) => return,
+        };
+
+        // Set up callback server for blind SSRF
+        let callback_port = 8080;
+        let callback_url = format!("http://localhost:{}", callback_port);
+        let payload_tracker = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+
+        let tracker_clone = payload_tracker.clone();
+        tokio::spawn(async move {
+            if let Err(e) =
+                blind_xss_server::start_callback_server(callback_port, tracker_clone).await
+            {
+                eprintln!("Callback server error: {}", e);
+            }
+        });
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let mut scanner = ssrf_scanner::SsrfScanner::new(
+            url.clone(),
+            found_urls.clone(),
+            &reporter,
+            Arc::clone(rate_limiter),
+            callback_url,
+        );
+
+        let total_checks = scanner.targets_count();
+
+        if total_checks == 0 {
+            println!("No URLs found to check for SSRF.");
+            m.clear().unwrap();
+            return;
+        }
+
+        println!("Starting SSRF scan...");
+        println!(
+            "Callback server listening on: {}",
+            scanner.get_callback_url()
+        );
+        let pb = m.add(ProgressBar::new(total_checks as u64));
+        pb.set_style(sty.clone());
+
+        if let Err(e) = scanner.scan(&pb).await {
+            eprintln!("Error scanning for SSRF: {}", e);
+        } else {
+            pb.finish_with_message("SSRF scan complete.");
         }
     }
 }

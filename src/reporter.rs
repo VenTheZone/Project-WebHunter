@@ -296,6 +296,59 @@ impl Reporter {
             let _ = writeln!(file, "\n---\n");
         }
     }
+
+    pub fn report_cors(&self, vuln: &crate::cors_scanner::CorsVulnerability) {
+        if let Ok(mut file) = self.get_report_file("CORS-Misconfiguration-output.md") {
+            let severity_emoji = if vuln.severity.contains("Critical") {
+                "🔴"
+            } else if vuln.severity.contains("High") {
+                "🟠"
+            } else {
+                "🟡"
+            };
+            let _ = writeln!(file, "## 🎯 CORS Misconfiguration Detected\n");
+            let _ = writeln!(file, "| Field | Value |");
+            let _ = writeln!(file, "|-------|-------|");
+            let _ = writeln!(
+                file,
+                "| **Severity** | {} **{}** |",
+                severity_emoji, vuln.severity
+            );
+            let _ = writeln!(file, "| **URL** | [{}]({}) |", vuln.url, vuln.url);
+            let _ = writeln!(file, "| **Test Origin** | `{}` |", vuln.origin);
+            let _ = writeln!(file, "| **Vulnerability Type** | {} |", vuln.vuln_type);
+            let _ = writeln!(file, "\n### 📝 Description\n{}", vuln.description);
+            let _ = writeln!(file, "\n### 🛡️ Remediation\n- Use strict origin allowlist instead of wildcards\n- Avoid `Access-Control-Allow-Credentials: true` with wildcard origins\n- Validate Origin header against a strict allowlist\n- Do not reflect user-controlled Origin values");
+            let _ = writeln!(file, "\n---\n");
+        }
+    }
+
+    pub fn report_ssrf(&self, vuln: &crate::ssrf_scanner::SsrfVulnerability) {
+        if let Ok(mut file) = self.get_report_file("SSRF-output.md") {
+            let severity_emoji = if vuln.severity == "Critical" {
+                "🔴"
+            } else if vuln.severity == "High" {
+                "🟠"
+            } else {
+                "🟡"
+            };
+            let _ = writeln!(file, "## 🎯 SSRF Vulnerability Detected\n");
+            let _ = writeln!(file, "| Field | Value |");
+            let _ = writeln!(file, "|-------|-------|");
+            let _ = writeln!(
+                file,
+                "| **Severity** | {} **{}** |",
+                severity_emoji, vuln.severity
+            );
+            let _ = writeln!(file, "| **URL** | [{}]({}) |", vuln.url, vuln.url);
+            let _ = writeln!(file, "| **Parameter** | `{}` |", vuln.parameter);
+            let _ = writeln!(file, "| **Payload** | `{}` |", vuln.payload);
+            let _ = writeln!(file, "| **Vulnerability Type** | {} |", vuln.vuln_type);
+            let _ = writeln!(file, "\n### 📝 Description\n{}", vuln.description);
+            let _ = writeln!(file, "\n### 🛡️ Remediation\n- Validate and sanitize user-supplied URLs\n- Use allowlist for permitted domains/IPs\n- Disable unnecessary URL schemas (file://, gopher://, etc.)\n- Implement network segmentation\n- Use safe URL parsing libraries that prevent bypasses");
+            let _ = writeln!(file, "\n---\n");
+        }
+    }
 }
 #[cfg(test)]
 mod tests {
