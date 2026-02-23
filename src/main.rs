@@ -77,8 +77,11 @@ async fn crawl_target(
     m: &MultiProgress,
     sty: &ProgressStyle,
     rate_limiter: &Arc<rate_limiter::RateLimiter>,
+    max_depth: u32,
+    max_urls: u32,
 ) -> Result<(Vec<Url>, Vec<form::Form>), reqwest::Error> {
-    let mut crawler = crawler::Crawler::new(url.clone(), Arc::clone(rate_limiter));
+    let mut crawler =
+        crawler::Crawler::with_limits(url.clone(), Arc::clone(rate_limiter), max_depth, max_urls);
     let pb_crawl = m.add(ProgressBar::new(100));
     pb_crawl.set_style(sty.clone());
 
@@ -111,7 +114,7 @@ struct Cli {
     #[arg(long)]
     target_list: Option<String>,
 
-    /// The type of scanner to use (xss, dir, file, sql, bypass)
+    /// The type of scanner to use (xss, dir, file, sql, bypass, cors, ssrf, exposed)
     #[arg(short, long)]
     scanner: Option<String>,
 
@@ -122,6 +125,18 @@ struct Cli {
     /// Force install feroxbuster
     #[arg(long)]
     force_install: bool,
+
+    /// Maximum crawl depth (default: 2)
+    #[arg(long, default_value_t = 2)]
+    max_depth: u32,
+
+    /// Maximum URLs to crawl (default: 50)
+    #[arg(long, default_value_t = 50)]
+    max_urls: u32,
+
+    /// Skip crawling and scan only the target URL directly
+    #[arg(long)]
+    no_crawl: bool,
 }
 
 #[tokio::main]
@@ -220,7 +235,7 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
             } else if lower == "ssrf" {
                 10
             } else {
-                0 // default to xss
+                0
             }
         }
         None => match Select::with_theme(&ColorfulTheme::default())
@@ -281,6 +296,17 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
 
     let reporter = Arc::new(reporter::Reporter::new(url.clone()));
 
+    // Handle no_crawl mode - use only the target URL
+    let found_urls: Vec<Url> = if cli.no_crawl {
+        println!("[*] No-crawl mode: scanning target URL directly");
+        vec![url.clone()]
+    } else {
+        vec![]
+    };
+
+    #[allow(unused_variables)]
+    let found_forms: Vec<form::Form> = vec![];
+
     if selection == 0 {
         // XSS Scanner - Ask user which type
         let xss_type = if cli.scanner.is_some() {
@@ -297,11 +323,23 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
 
         if xss_type == 0 {
             // Existing Reflected/Stored XSS scanner
-            let (found_urls, found_forms) =
-                match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+            let (found_urls, found_forms) = if cli.no_crawl {
+                (found_urls.clone(), vec![])
+            } else {
+                match crawl_target(
+                    url.clone(),
+                    &m,
+                    &sty,
+                    rate_limiter,
+                    cli.max_depth,
+                    cli.max_urls,
+                )
+                .await
+                {
                     Ok((urls, forms)) => (urls, forms),
                     Err(_) => return,
-                };
+                }
+            };
 
             let scanner = xss::XssScanner::new(
                 found_urls.clone(),
@@ -330,11 +368,19 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
             }
         } else {
             // New DOM-based XSS scanner
-            let (found_urls, _found_forms) =
-                match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
-                    Ok((urls, forms)) => (urls, forms),
-                    Err(_) => return,
-                };
+            let (found_urls, _found_forms) = match crawl_target(
+                url.clone(),
+                &m,
+                &sty,
+                rate_limiter,
+                cli.max_depth,
+                cli.max_urls,
+            )
+            .await
+            {
+                Ok((urls, forms)) => (urls, forms),
+                Err(_) => return,
+            };
 
             println!(
                 "Starting DOM-based XSS analysis on {} pages...",
@@ -404,11 +450,19 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
             pb_dir.finish_with_message("Directory scan complete");
         }
     } else if selection == 2 {
-        let (found_urls, found_forms) =
-            match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
-                Ok((urls, forms)) => (urls, forms),
-                Err(_) => return,
-            };
+        let (found_urls, found_forms) = match crawl_target(
+            url.clone(),
+            &m,
+            &sty,
+            rate_limiter,
+            cli.max_depth,
+            cli.max_urls,
+        )
+        .await
+        {
+            Ok((urls, forms)) => (urls, forms),
+            Err(_) => return,
+        };
 
         let scanner = file_inclusion_scanner::FileInclusionScanner::new(
             found_urls.clone(),
@@ -429,11 +483,19 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
             pb_scan.finish_with_message("Scanning complete");
         }
     } else if selection == 3 {
-        let (found_urls, found_forms) =
-            match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
-                Ok((urls, forms)) => (urls, forms),
-                Err(_) => return,
-            };
+        let (found_urls, found_forms) = match crawl_target(
+            url.clone(),
+            &m,
+            &sty,
+            rate_limiter,
+            cli.max_depth,
+            cli.max_urls,
+        )
+        .await
+        {
+            Ok((urls, forms)) => (urls, forms),
+            Err(_) => return,
+        };
 
         let scanner = sql_injection_scanner::SqlInjectionScanner::new(
             found_urls.clone(),
@@ -471,11 +533,19 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         }
     } else if selection == 5 {
         // CSRF Scanner
-        let (found_urls, found_forms) =
-            match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
-                Ok((urls, forms)) => (urls, forms),
-                Err(_) => return,
-            };
+        let (found_urls, found_forms) = match crawl_target(
+            url.clone(),
+            &m,
+            &sty,
+            rate_limiter,
+            cli.max_depth,
+            cli.max_urls,
+        )
+        .await
+        {
+            Ok((urls, forms)) => (urls, forms),
+            Err(_) => return,
+        };
 
         let scanner = csrf_scanner::CsrfScanner::new(
             found_forms.clone(),
@@ -492,7 +562,16 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
             println!("CSRF scan complete.");
         }
     } else if selection == 6 {
-        let (_, found_forms) = match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+        let (_, found_forms) = match crawl_target(
+            url.clone(),
+            &m,
+            &sty,
+            rate_limiter,
+            cli.max_depth,
+            cli.max_urls,
+        )
+        .await
+        {
             Ok((urls, forms)) => (urls, forms),
             Err(_) => return,
         };
@@ -522,7 +601,16 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         }
     } else if selection == 7 {
         // Broken Access Control Scanner
-        let (found_urls, _) = match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+        let (found_urls, _) = match crawl_target(
+            url.clone(),
+            &m,
+            &sty,
+            rate_limiter,
+            cli.max_depth,
+            cli.max_urls,
+        )
+        .await
+        {
             Ok((urls, forms)) => (urls, forms),
             Err(_) => return,
         };
@@ -555,11 +643,19 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         }
     } else if selection == 8 {
         // Blind XSS Scanner
-        let (found_urls, found_forms) =
-            match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
-                Ok((urls, forms)) => (urls, forms),
-                Err(_) => return,
-            };
+        let (found_urls, found_forms) = match crawl_target(
+            url.clone(),
+            &m,
+            &sty,
+            rate_limiter,
+            cli.max_depth,
+            cli.max_urls,
+        )
+        .await
+        {
+            Ok((urls, forms)) => (urls, forms),
+            Err(_) => return,
+        };
 
         // Set up callback server
         let callback_port = 8080;
@@ -614,9 +710,22 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         println!("[*] Blind XSS scan complete.");
     } else if selection == 9 {
         // CORS Scanner
-        let (found_urls, _) = match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
-            Ok((urls, forms)) => (urls, forms),
-            Err(_) => return,
+        let found_urls = if cli.no_crawl {
+            found_urls.clone()
+        } else {
+            match crawl_target(
+                url.clone(),
+                &m,
+                &sty,
+                rate_limiter,
+                cli.max_depth,
+                cli.max_urls,
+            )
+            .await
+            {
+                Ok((urls, forms)) => urls,
+                Err(_) => return,
+            }
         };
 
         let mut scanner = cors_scanner::CorsScanner::new(
@@ -645,9 +754,22 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         }
     } else if selection == 10 {
         // SSRF Scanner
-        let (found_urls, _) = match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
-            Ok((urls, forms)) => (urls, forms),
-            Err(_) => return,
+        let found_urls = if cli.no_crawl {
+            found_urls.clone()
+        } else {
+            match crawl_target(
+                url.clone(),
+                &m,
+                &sty,
+                rate_limiter,
+                cli.max_depth,
+                cli.max_urls,
+            )
+            .await
+            {
+                Ok((urls, forms)) => urls,
+                Err(_) => return,
+            }
         };
 
         let callback_port = 8080;
@@ -696,9 +818,22 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         }
     } else if selection == 11 {
         // Exposed Files Scanner
-        let (found_urls, _) = match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
-            Ok((urls, forms)) => (urls, forms),
-            Err(_) => return,
+        let found_urls = if cli.no_crawl {
+            found_urls.clone()
+        } else {
+            match crawl_target(
+                url.clone(),
+                &m,
+                &sty,
+                rate_limiter,
+                cli.max_depth,
+                cli.max_urls,
+            )
+            .await
+            {
+                Ok((urls, forms)) => urls,
+                Err(_) => return,
+            }
         };
 
         let mut scanner = exposed_files_scanner::ExposedFilesScanner::new(

@@ -16,10 +16,22 @@ pub struct Crawler {
     http_headers: Vec<(String, String)>,
     forms: Vec<Form>,
     rate_limiter: Arc<RateLimiter>,
+    max_depth: u32,
+    max_urls: u32,
 }
 
 impl Crawler {
+    #[allow(dead_code)]
     pub fn new(target_url: Url, rate_limiter: Arc<RateLimiter>) -> Self {
+        Self::with_limits(target_url, rate_limiter, 2, 50)
+    }
+
+    pub fn with_limits(
+        target_url: Url,
+        rate_limiter: Arc<RateLimiter>,
+        max_depth: u32,
+        max_urls: u32,
+    ) -> Self {
         Self {
             target_url,
             visited_urls: HashSet::new(),
@@ -27,6 +39,8 @@ impl Crawler {
             http_headers: Self::load_header_payloads(),
             forms: Vec::new(),
             rate_limiter,
+            max_depth,
+            max_urls,
         }
     }
 
@@ -64,24 +78,35 @@ impl Crawler {
     ) -> Result<(Vec<Url>, Vec<Form>), reqwest::Error> {
         let mut urls_to_visit = vec![self.target_url.clone()];
         let mut found_urls = vec![];
-        let max_depth = 3;
 
-        for depth in 0..max_depth {
+        for depth in 0..self.max_depth {
+            if self.visited_urls.len() >= self.max_urls as usize {
+                break;
+            }
+
             let mut next_urls = HashSet::new();
             let urls_at_current_depth = urls_to_visit.clone();
             urls_to_visit.clear();
 
             for url in urls_at_current_depth {
+                if self.visited_urls.len() >= self.max_urls as usize {
+                    break;
+                }
+
                 if self.visited_urls.contains(&url) {
                     continue;
                 }
 
-                pb.set_message(format!("Crawling: {}", url));
+                pb.set_message(format!(
+                    "Crawling: {} ({} URLs)",
+                    url,
+                    self.visited_urls.len()
+                ));
                 self.visited_urls.insert(url.clone());
                 found_urls.push(url.clone());
 
                 let client = reqwest::Client::new();
-                let user_agent = &self.user_agents[depth % self.user_agents.len()];
+                let user_agent = &self.user_agents[(depth as usize) % self.user_agents.len()];
                 let mut request = client.get(url.clone()).header("User-Agent", user_agent);
 
                 if let Some((header_name, header_value)) =
