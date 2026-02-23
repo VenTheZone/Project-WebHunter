@@ -220,7 +220,7 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
             } else if lower == "ssrf" {
                 10
             } else {
-                8
+                0 // default to xss
             }
         }
         None => match Select::with_theme(&ColorfulTheme::default())
