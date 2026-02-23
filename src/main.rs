@@ -123,10 +123,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() {
-    // SAFETY: This is set at the start of main before any threads are spawned
-    unsafe {
-        std::env::set_var("RUST_BACKTRACE", "full");
-    }
+    std::env::set_var("RUST_BACKTRACE", "full");
     animation::run_intro_animation();
     let cli = Cli::parse();
 

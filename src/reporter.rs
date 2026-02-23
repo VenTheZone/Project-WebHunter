@@ -1,8 +1,6 @@
-use crate::access_control_scanner::AccessControlVulnerability;
 use crate::bypass_403::BypassBypass;
 use crate::file_inclusion_scanner::FileInclusionVulnerability;
 use crate::sql_injection_scanner::SqlInjectionVulnerability;
-use crate::xss;
 use chrono::Local;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};

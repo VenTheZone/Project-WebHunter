@@ -64,8 +64,15 @@ impl<'a> DirScanner<'a> {
                 if let Ok(response) = serde_json::from_str::<FeroxResponse>(&line) {
                     if response.status != 404 {
                         if let Ok(url) = Url::parse(&response.url) {
-                            println!("[+] Open Directory Found: {} (Status: {}, Size: {})", url, response.status, response.content_length);
-                            self.reporter.report_directory(&url, response.status, response.content_length);
+                            println!(
+                                "[+] Open Directory Found: {} (Status: {}, Size: {})",
+                                url, response.status, response.content_length
+                            );
+                            self.reporter.report_directory(
+                                &url,
+                                response.status,
+                                response.content_length,
+                            );
                         }
                     }
                 }

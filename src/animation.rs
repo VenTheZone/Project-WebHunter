@@ -1,4 +1,8 @@
-use crossterm::{cursor, terminal, ExecutableCommand, style::{Stylize, Color}};
+use crossterm::{
+    cursor,
+    style::{Color, Stylize},
+    terminal, ExecutableCommand,
+};
 use rand::Rng;
 use std::io::{stdout, IsTerminal, Write};
 use std::thread;
@@ -24,7 +28,9 @@ pub fn run_intro_animation() {
     let mut rng = rand::thread_rng();
 
     stdout.execute(cursor::Hide).unwrap();
-    stdout.execute(terminal::Clear(terminal::ClearType::All)).unwrap();
+    stdout
+        .execute(terminal::Clear(terminal::ClearType::All))
+        .unwrap();
 
     let lines: Vec<&str> = TITLE.lines().filter(|&l| !l.trim().is_empty()).collect();
     let final_chars: Vec<Vec<char>> = lines.iter().map(|line| line.chars().collect()).collect();
@@ -35,7 +41,8 @@ pub fn run_intro_animation() {
     let mut current_chars = vec![vec![' '; width]; height];
 
     // Animation loop to build the title
-    for _ in 0..30 { // Number of frames
+    for _ in 0..30 {
+        // Number of frames
         stdout.execute(cursor::MoveTo(0, 0)).unwrap();
         let mut all_match = true;
 
