@@ -187,7 +187,7 @@ mod tests {
     use std::time::Duration;
     use tempfile::TempDir;
 
-    fn create_test_scanner(url: Url, reporter: &Arc<Reporter>) -> AccessControlScanner {
+    fn create_test_scanner(url: Url, reporter: &Arc<Reporter>) -> AccessControlScanner<'_> {
         AccessControlScanner::new(
             url.clone(),
             vec![url], // Discovered URLs
@@ -196,6 +196,7 @@ mod tests {
         )
     }
 
+    #[allow(dead_code)]
     fn create_test_reporter() -> (Arc<Reporter>, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let url = Url::parse("http://example.com").unwrap();
