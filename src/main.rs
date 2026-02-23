@@ -195,17 +195,34 @@ async fn main() {
 
 async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, target_url: &str) {
     let selection = match &cli.scanner {
-        Some(scanner) if scanner.to_lowercase() == "xss" => 0,
-        Some(scanner) if scanner.to_lowercase() == "dir" => 1,
-        Some(scanner) if scanner.to_lowercase() == "file" => 2,
-        Some(scanner) if scanner.to_lowercase() == "sql" => 3,
-        Some(scanner) if scanner.to_lowercase() == "bypass" || scanner == "403" => 4,
-        Some(scanner) if scanner.to_lowercase() == "csrf" => 5,
-        Some(scanner) if scanner.to_lowercase() == "auth" => 6,
-        Some(scanner) if scanner.to_lowercase() == "bac" => 7,
-        Some(scanner) if scanner.to_lowercase() == "exposed" => 8,
-        Some(scanner) if scanner.to_lowercase() == "cors" => 9,
-        Some(scanner) if scanner.to_lowercase() == "ssrf" => 10,
+        Some(scanner) => {
+            let lower = scanner.to_lowercase();
+            if lower == "xss" {
+                0
+            } else if lower == "dir" {
+                1
+            } else if lower == "file" {
+                2
+            } else if lower == "sql" {
+                3
+            } else if lower == "bypass" || scanner == "403" {
+                4
+            } else if lower == "csrf" {
+                5
+            } else if lower == "auth" {
+                6
+            } else if lower == "bac" {
+                7
+            } else if lower == "exposed" {
+                8
+            } else if lower == "cors" {
+                9
+            } else if lower == "ssrf" {
+                10
+            } else {
+                8
+            }
+        }
         None => match Select::with_theme(&ColorfulTheme::default())
             .with_prompt("Choose an option")
             .items(&[
@@ -230,12 +247,6 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
                 return;
             }
         },
-        _ => {
-            eprintln!(
-                "Invalid scanner type provided. Available options: xss, dir, file, sql, bypass/403"
-            );
-            return;
-        }
     };
 
     let m = MultiProgress::new();
@@ -602,37 +613,6 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         scanner.report_findings().await;
         println!("[*] Blind XSS scan complete.");
     } else if selection == 9 {
-        // Exposed Files Scanner
-        let (found_urls, _) = match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
-            Ok((urls, forms)) => (urls, forms),
-            Err(_) => return,
-        };
-
-        let mut scanner = exposed_files_scanner::ExposedFilesScanner::new(
-            url.clone(),
-            found_urls.clone(),
-            &reporter,
-            Arc::clone(rate_limiter),
-        );
-
-        let total_checks = scanner.targets_count();
-
-        if total_checks == 0 {
-            println!("No URLs found to check.");
-            m.clear().unwrap();
-            return;
-        }
-
-        println!("Starting Exposed Files scan...");
-        let pb = m.add(ProgressBar::new(total_checks as u64));
-        pb.set_style(sty.clone());
-
-        if let Err(e) = scanner.scan(&pb).await {
-            eprintln!("Error scanning for Exposed Files: {}", e);
-        } else {
-            pb.finish_with_message("Exposed Files scan complete.");
-        }
-    } else if selection == 10 {
         // CORS Scanner
         let (found_urls, _) = match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
             Ok((urls, forms)) => (urls, forms),
@@ -663,14 +643,13 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
         } else {
             pb.finish_with_message("CORS scan complete.");
         }
-    } else if selection == 11 {
+    } else if selection == 10 {
         // SSRF Scanner
         let (found_urls, _) = match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
             Ok((urls, forms)) => (urls, forms),
             Err(_) => return,
         };
 
-        // Set up callback server for blind SSRF
         let callback_port = 8080;
         let callback_url = format!("http://localhost:{}", callback_port);
         let payload_tracker = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
@@ -714,6 +693,37 @@ async fn run_scan(cli: &Cli, rate_limiter: &Arc<rate_limiter::RateLimiter>, targ
             eprintln!("Error scanning for SSRF: {}", e);
         } else {
             pb.finish_with_message("SSRF scan complete.");
+        }
+    } else if selection == 11 {
+        // Exposed Files Scanner
+        let (found_urls, _) = match crawl_target(url.clone(), &m, &sty, rate_limiter).await {
+            Ok((urls, forms)) => (urls, forms),
+            Err(_) => return,
+        };
+
+        let mut scanner = exposed_files_scanner::ExposedFilesScanner::new(
+            url.clone(),
+            found_urls.clone(),
+            &reporter,
+            Arc::clone(rate_limiter),
+        );
+
+        let total_checks = scanner.targets_count();
+
+        if total_checks == 0 {
+            println!("No URLs found to check.");
+            m.clear().unwrap();
+            return;
+        }
+
+        println!("Starting Exposed Files scan...");
+        let pb = m.add(ProgressBar::new(total_checks as u64));
+        pb.set_style(sty.clone());
+
+        if let Err(e) = scanner.scan(&pb).await {
+            eprintln!("Error scanning for Exposed Files: {}", e);
+        } else {
+            pb.finish_with_message("Exposed Files scan complete.");
         }
     }
 }
